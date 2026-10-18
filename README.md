@@ -25,3 +25,16 @@ Basically roughly matching ripgrep abilities.
 
 - `PATH`
   A file or directory to search. Directories are searched recursively. File paths specified explicitly on the command line override glob and ignore rules.
+
+
+# How it works
+
+- Read file line-by-line into a buffer.
+- Run regex vs extracted lines.
+- Repeat.
+
+Only single-line pattern expressions bc. of this.
+
+For parallelism/concurrency:
+- launch separate traversal and matching jobs capped by max jobs limit.
+- collect output
