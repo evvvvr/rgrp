@@ -2,6 +2,7 @@ use std::env;
 use std::process::ExitCode;
 
 use rgrp::search::search;
+use rgrp::printer::print_in_color;
 
 const USAGE_HINT: &str = "usage: rgrp [OPTIONS] PATTERN PATH";
 
@@ -29,7 +30,7 @@ fn main() -> ExitCode {
     };
 
     let paths = std::iter::once(path).chain(rest_paths);
-    let mut results = paths.map(|path| search(pattern, path));
+    let mut results = paths.map(|path| search(pattern, path, print_in_color));
 
     if let Some(e) = results.find_map(Result::err) {
         eprintln!("{e}");
