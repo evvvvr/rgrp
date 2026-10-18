@@ -1,8 +1,8 @@
 use std::env;
 use std::process::ExitCode;
 
+use rgrp::printer::ColorPrinter;
 use rgrp::search::search;
-use rgrp::printer::print_in_color;
 
 const USAGE_HINT: &str = "usage: rgrp [OPTIONS] PATTERN PATH";
 
@@ -24,13 +24,14 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     };
 
-    let Some(rest_paths): Option<Vec<&str>> = rest_args.iter().map(|arg| arg.to_str()).collect() else {
+    let Some(rest_paths): Option<Vec<&str>> = rest_args.iter().map(|arg| arg.to_str()).collect()
+    else {
         eprintln!("arguments must be valid UTF-8");
         return ExitCode::FAILURE;
     };
 
     let paths = std::iter::once(path).chain(rest_paths);
-    let mut results = paths.map(|path| search(pattern, path, print_in_color));
+    let mut results = paths.map(|path| search(pattern, path, &mut ColorPrinter::new()));
 
     if let Some(e) = results.find_map(Result::err) {
         eprintln!("{e}");
