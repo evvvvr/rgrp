@@ -15,12 +15,24 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     };
 
+    // collect rest of the pathes
+    let rest_args: Vec<_> = args.collect();
+
     let (Some(pattern), Some(path)) = (pattern.to_str(), path.to_str()) else {
         eprintln!("arguments must be valid UTF-8");
         return ExitCode::FAILURE;
     };
 
-    if let Err(e) = search(pattern, path) {
+    let Some(rest_paths): Option<Vec<&str>> = rest_args.iter().map(|arg| arg.to_str()).collect() else {
+        eprintln!("arguments must be valid UTF-8");
+        return ExitCode::FAILURE;
+    };
+
+    let pathes = std::iter::once(path).chain(rest_paths);
+
+    let mut results = pathes.map(|path| search(pattern, path));
+
+    if let Some(e) = results.find_map(Result::err) {
         eprintln!("{e}");
         return ExitCode::FAILURE;
     }
