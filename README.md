@@ -1,6 +1,6 @@
 # rgrp (Rust grep)
 
-Yet another `grep` rewrite in Rust.
+  Yet another `grep` rewrite in Rust.
 Just a hobby 100% artisanal hand-coded learning project.
 
 Should support:

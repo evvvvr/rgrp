@@ -43,6 +43,14 @@ impl Printer for ColorPrinter {
     }
 }
 
-pub fn print(file_path: &str, line_no: u64, line: &str, _m: &regex::Match) {
-    println!("{file_path}:{line_no} {line}")
+pub struct MonochromePrinter {}
+
+impl Printer for MonochromePrinter {
+    fn print(&mut self, file_path: &str, _line_no: u64, line: &str, _m: &regex::Match) {
+        println!("{file_path}:{line}");
+    }
+
+    fn on_eof(&mut self) {
+        // nop
+    }
 }

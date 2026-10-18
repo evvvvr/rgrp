@@ -1,8 +1,9 @@
 use std::env;
+use std::io::IsTerminal;
 use std::process::ExitCode;
 
-use rgrp::printer::ColorPrinter;
-use rgrp::search::search;
+use rgrp::printer::{ColorPrinter, MonochromePrinter};
+use rgrp::run::run;
 
 const USAGE_HINT: &str = "usage: rgrp [OPTIONS] PATTERN PATH";
 
@@ -31,9 +32,16 @@ fn main() -> ExitCode {
     };
 
     let paths = std::iter::once(path).chain(rest_paths);
-    let mut results = paths.map(|path| search(pattern, path, &mut ColorPrinter::new()));
 
-    if let Some(e) = results.find_map(Result::err) {
+    let no_terminal = !std::io::stdout().is_terminal() || env::var("NO_COLOR").is_ok();
+
+    let error = if no_terminal {
+        run(pattern, paths, || MonochromePrinter {})
+    } else {
+        run(pattern, paths, ColorPrinter::new)
+    };
+
+    if let Some(e) = error {
         eprintln!("{e}");
         return ExitCode::FAILURE;
     }
