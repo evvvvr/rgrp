@@ -15,7 +15,7 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     };
 
-    // collect rest of the pathes
+    // collect rest of the paths
     let rest_args: Vec<_> = args.collect();
 
     let (Some(pattern), Some(path)) = (pattern.to_str(), path.to_str()) else {
@@ -28,9 +28,8 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     };
 
-    let pathes = std::iter::once(path).chain(rest_paths);
-
-    let mut results = pathes.map(|path| search(pattern, path));
+    let paths = std::iter::once(path).chain(rest_paths);
+    let mut results = paths.map(|path| search(pattern, path));
 
     if let Some(e) = results.find_map(Result::err) {
         eprintln!("{e}");
