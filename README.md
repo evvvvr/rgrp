@@ -1,18 +1,20 @@
 # rgrp (Rust grep)
 
-  Yet another `grep` rewrite in Rust.
+Yet another `grep` rewrite in Rust.
 Just a hobby 100% artisanal hand-coded learning project.
 
-Should support:
-- regex matching
+## To Do:
+- walking over directories (not following symlinks)
 - parallel/concurrent search
 - searching inside tars/compressed files
-- ignoring/specifying files
+- ignoring/specifying search paths/file patterns 
 - file read optimization with mmap
+- multiline matches
+- ignore case etc. flags
 
 Basically roughly matching ripgrep abilities.
 
-# CLI syntax
+## CLI syntax
 
 **SYNOPSIS**
 

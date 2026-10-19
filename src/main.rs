@@ -42,6 +42,7 @@ fn main() -> ExitCode {
     };
 
     if let Some(e) = error {
+        //TODO: print all errors, not the first one
         eprintln!("{e}");
         return ExitCode::FAILURE;
     }
