@@ -4,13 +4,14 @@ Yet another `grep` rewrite in Rust.
 Just a hobby 100% artisanal hand-coded learning project.
 
 ## To Do:
-- walking over directories (not following symlinks)
+- ignore case flag
+- allow double dash in pattern
 - parallel/concurrent search
 - searching inside tars/compressed files
 - ignoring/specifying search paths/file patterns 
 - file read optimization with mmap
 - multiline matches
-- ignore case etc. flags
+- follow symlinks (avoid infinite loops)
 
 Basically roughly matching ripgrep abilities.
 
