@@ -37,7 +37,7 @@ impl From<regex::Error> for Error {
 }
 
 pub fn search<T: Printer>(
-    re: &regex::Regex,
+    patterns: &[Regex],
     path: &str,
     make_printer: &mut impl FnMut() -> T,
     on_error: &mut impl FnMut(Error, &str),
@@ -60,7 +60,7 @@ pub fn search<T: Printer>(
                 on_error(Error::NonUtf8Path, &entry_path.to_string_lossy());
                 continue;
             };
-            search(re, entry_path, make_printer, on_error)?;
+            search(patterns, entry_path, make_printer, on_error)?;
         }
         return Ok(());
     }
@@ -70,16 +70,20 @@ pub fn search<T: Printer>(
         return Ok(());
     }
 
-    search_file(re, path, &mut make_printer())
+    search_file(patterns, path, &mut make_printer())
 }
 
-fn search_file<T: Printer>(pattern: &Regex, file_path: &str, printer: &mut T) -> Result<(), Error> {
+fn search_file<T: Printer>(
+    patterns: &[Regex],
+    file_path: &str,
+    printer: &mut T,
+) -> Result<(), Error> {
     let file = fs::File::open(file_path)?;
-    search_reader(pattern, file_path, BufReader::new(file), printer)
+    search_reader(patterns, file_path, BufReader::new(file), printer)
 }
 
 fn search_reader<T: Printer>(
-    pattern: &Regex,
+    patterns: &[Regex],
     file_path: &str,
     mut reader: impl BufRead,
     printer: &mut T,
@@ -98,8 +102,10 @@ fn search_reader<T: Printer>(
             }
             Ok(_) => {
                 let line = buf.trim_end_matches(['\r', '\n']);
-                if let Some(m) = pattern.find(line) {
-                    printer.print(file_path, line_number, line, &m);
+                for pattern in patterns {
+                    for m in pattern.find_iter(line) {
+                        printer.print(file_path, line_number, line, &m);
+                    }
                 }
             }
             Err(err) if err.kind() == std::io::ErrorKind::InvalidData => {
@@ -158,7 +164,7 @@ mod tests {
     fn run_reader(pattern: &str, input: &str) -> RecordingPrinter {
         let re = Regex::new(pattern).unwrap();
         let mut printer = RecordingPrinter::new();
-        search_reader(&re, "<test>", Cursor::new(input.as_bytes()), &mut printer).unwrap();
+        search_reader(&[re], "<test>", Cursor::new(input.as_bytes()), &mut printer).unwrap();
         printer
     }
 

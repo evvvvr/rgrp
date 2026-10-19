@@ -17,7 +17,7 @@ fn finds_matches_in_every_file_of_a_flat_directory() {
     let recorder = SharedRecorder::new();
     let re = Regex::new("hello").unwrap();
     search(
-        &re,
+        &[re],
         dir.path().to_str().unwrap(),
         &mut || recorder.printer(),
         &mut |_, _| {},
@@ -40,7 +40,7 @@ fn recurses_into_nested_subdirectories() {
     let recorder = SharedRecorder::new();
     let re = Regex::new("needle").unwrap();
     search(
-        &re,
+        &[re],
         dir.path().to_str().unwrap(),
         &mut || recorder.printer(),
         &mut |_, _| {},
@@ -57,7 +57,7 @@ fn empty_directory_produces_no_matches_and_no_error() {
     let recorder = SharedRecorder::new();
     let re = Regex::new("anything").unwrap();
     search(
-        &re,
+        &[re],
         dir.path().to_str().unwrap(),
         &mut || recorder.printer(),
         &mut |_, _| {},
@@ -77,7 +77,7 @@ fn single_file_path_is_searched_directly() {
     let recorder = SharedRecorder::new();
     let re = Regex::new("needle").unwrap();
     search(
-        &re,
+        &[re],
         file.to_str().unwrap(),
         &mut || recorder.printer(),
         &mut |_, _| {},
@@ -95,7 +95,7 @@ fn nonexistent_path_returns_io_error() {
     let recorder = SharedRecorder::new();
     let re = Regex::new("x").unwrap();
     let result = search(
-        &re,
+        &[re],
         missing.to_str().unwrap(),
         &mut || recorder.printer(),
         &mut |_, _| {},
@@ -116,7 +116,7 @@ fn symlinks_are_skipped_rather_than_followed() {
     let recorder = SharedRecorder::new();
     let re = Regex::new("needle").unwrap();
     search(
-        &re,
+        &[re],
         dir.path().to_str().unwrap(),
         &mut || recorder.printer(),
         &mut |_, _| {},
@@ -144,7 +144,7 @@ fn non_utf8_path_is_skipped_without_aborting_the_walk() {
     let recorder = SharedRecorder::new();
     let re = Regex::new("needle").unwrap();
     search(
-        &re,
+        &[re],
         dir.path().to_str().unwrap(),
         &mut || recorder.printer(),
         &mut |_, _| {},

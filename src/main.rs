@@ -13,9 +13,9 @@ const PROGRAM_NAME: &str = "rgrp";
 #[derive(Parser)]
 #[command(name=PROGRAM_NAME)]
 struct Cli {
-    /// A pattern to search for
+    /// A pattern to search for (may be given multiple times)
     #[arg(short = 'e', long = "regexp", value_name = "PATTERN")]
-    regexp: Option<String>,
+    regexp: Vec<String>,
 
     /// Regular expression pattern to search for, followed by paths to search in.
     /// (or, if -e/--regexp is given, only paths to search in)
@@ -25,24 +25,23 @@ struct Cli {
 fn parse_options() -> Options {
     let cli = Cli::parse();
 
-    let (pattern, path) = match cli.regexp {
-        Some(pattern) => (pattern, cli.args),
-        None => {
-            let mut args = cli.args.into_iter();
-            let Some(pattern) = args.next() else {
-                Cli::command()
-                    .error(
-                        clap::error::ErrorKind::MissingRequiredArgument,
-                        "the following required arguments were not provided:\n  <PATTERN>",
-                    )
-                    .exit();
-            };
-            (pattern, args.collect())
-        }
+    let (patterns, path) = if cli.regexp.is_empty() {
+        let mut args = cli.args.into_iter();
+        let Some(pattern) = args.next() else {
+            Cli::command()
+                .error(
+                    clap::error::ErrorKind::MissingRequiredArgument,
+                    "the following required arguments were not provided:\n  <PATTERN>",
+                )
+                .exit();
+        };
+        (vec![pattern], args.collect())
+    } else {
+        (cli.regexp, cli.args)
     };
 
     Options {
-        regexp: pattern,
+        regexps: patterns,
         files: path,
     }
 }

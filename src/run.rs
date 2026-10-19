@@ -17,7 +17,7 @@ impl From<regex::Error> for Error {
 }
 
 pub struct Options {
-    pub regexp: String,
+    pub regexps: Vec<String>,
     pub files: Vec<String>,
 }
 
@@ -26,12 +26,16 @@ pub fn run<P: Printer>(
     mut make_printer: impl FnMut() -> P,
     mut on_error: impl FnMut(search::Error, &str),
 ) -> Result<(), Error> {
-    let reg = Regex::new(&options.regexp)?;
+    let patterns = options
+        .regexps
+        .iter()
+        .map(|regexp| Regex::new(regexp))
+        .collect::<Result<Vec<_>, _>>()?;
 
     let mut had_error = false;
 
     for path in &options.files {
-        if let Err(err) = search(&reg, path, &mut make_printer, &mut on_error) {
+        if let Err(err) = search(&patterns, path, &mut make_printer, &mut on_error) {
             had_error = true;
             on_error(err, path);
         }

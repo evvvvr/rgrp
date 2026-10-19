@@ -18,7 +18,7 @@ fn reports_matches_from_good_paths_and_errors_for_bad_ones() {
     let errors = RefCell::new(Vec::new());
 
     let options = Options {
-        regexp: "needle".to_string(),
+        regexps: vec!["needle".to_string()],
         files: vec![
             good.to_str().unwrap().to_string(),
             missing.to_str().unwrap().to_string(),
@@ -46,7 +46,7 @@ fn succeeds_when_every_path_is_valid() {
     let errors = RefCell::new(Vec::new());
 
     let options = Options {
-        regexp: "needle".to_string(),
+        regexps: vec!["needle".to_string()],
         files: vec![file.to_str().unwrap().to_string()],
     };
 
