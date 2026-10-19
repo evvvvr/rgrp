@@ -5,7 +5,7 @@ Just a hobby 100% artisanal hand-coded learning project.
 
 ## To Do:
 - ignore case flag
-- allow double dash in pattern
+- allow to search for multiple patterns
 - skip binary files
 - parallel/concurrent search
 - searching inside tars/compressed files

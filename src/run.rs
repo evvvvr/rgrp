@@ -5,16 +5,20 @@ use crate::{
 
 pub struct Error;
 
-pub fn run<'a, P: Printer>(
-    pattern: &str,
-    paths: impl Iterator<Item = &'a str>,
+pub struct Options {
+    pub regexp: String,
+    pub files: Vec<String>,
+}
+
+pub fn run<P: Printer>(
+    options: &Options,
     mut make_printer: impl FnMut() -> P,
     mut on_error: impl FnMut(search::Error, &str),
 ) -> Result<(), Error> {
     let mut had_error = false;
 
-    for path in paths {
-        if let Err(err) = search(pattern, path, &mut make_printer) {
+    for path in &options.files {
+        if let Err(err) = search(&options.regexp, path, &mut make_printer) {
             had_error = true;
             on_error(err, path);
         }

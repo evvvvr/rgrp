@@ -5,7 +5,7 @@ use std::io::IsTerminal;
 use std::process::ExitCode;
 
 use rgrp::printer::{ColorPrinter, MonochromePrinter};
-use rgrp::run::run;
+use rgrp::run::{Options, run};
 use rgrp::search;
 
 const PROGRAM_NAME: &str = "rgrp";
@@ -20,11 +20,6 @@ struct Cli {
     /// Regular expression pattern to search for, followed by paths to search in
     /// (or, if -e/--regexp is given, only paths to search in)
     args: Vec<String>,
-}
-
-struct Options {
-    regexp: String,
-    files: Vec<String>,
 }
 
 fn parse_options() -> Options {
@@ -58,7 +53,6 @@ fn main() -> ExitCode {
     // -v, --invert-match
 
     let options = parse_options();
-    let paths = options.files.iter().map(String::as_str);
 
     let no_terminal = !std::io::stdout().is_terminal() || env::var("NO_COLOR").is_ok();
 
@@ -70,9 +64,9 @@ fn main() -> ExitCode {
     };
 
     let result = if no_terminal {
-        run(&options.regexp, paths, || MonochromePrinter {}, on_error)
+        run(&options, || MonochromePrinter {}, on_error)
     } else {
-        run(&options.regexp, paths, ColorPrinter::new, on_error)
+        run(&options, ColorPrinter::new, on_error)
     };
 
     if result.is_err() {
