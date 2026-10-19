@@ -1,56 +1,45 @@
+use clap::Parser;
+
 use std::env;
 use std::io::IsTerminal;
-use std::path::Path;
 use std::process::ExitCode;
 
 use rgrp::printer::{ColorPrinter, MonochromePrinter};
 use rgrp::run::run;
 use rgrp::search;
 
-const USAGE_HINT: &str = "usage: rgrp [OPTIONS] PATTERN PATH";
+const PROGRAMM_NAME: &str = "rgrp";
+
+#[derive(Parser)]
+#[command(name=PROGRAMM_NAME)]
+struct Cli {
+    /// Regular expression pattern to search for
+    pattern: String,
+
+    /// File path to search in
+    path: Vec<String>,
+}
 
 fn main() -> ExitCode {
-    let mut args = env::args_os();
-    let program_name = args
-        .next()
-        .and_then(|a| {
-            Path::new(&a)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .map(str::to_owned)
-        })
-        .unwrap_or_else(|| "rgrp".to_owned());
-    let pattern = args.next();
-    let path = args.next();
+    // CLI args:
+    // -e PATTERN, --regexp=PATTERN multiple
+    // if used all positional args are considerex to be pathes
+    // -i, --ignore-case
+    // -v, --invert-match
 
-    let (Some(pattern), Some(path)) = (pattern, path) else {
-        eprintln!("{USAGE_HINT}");
-        return ExitCode::FAILURE;
-    };
+    let cli = Cli::parse();
+    let pattern = &cli.pattern;
+    let path = cli.path;
 
-    // collect rest of the paths
-    let rest_args: Vec<_> = args.collect();
-
-    let (Some(pattern), Some(path)) = (pattern.to_str(), path.to_str()) else {
-        eprintln!("arguments must be valid UTF-8");
-        return ExitCode::FAILURE;
-    };
-
-    let Some(rest_paths): Option<Vec<&str>> = rest_args.iter().map(|arg| arg.to_str()).collect()
-    else {
-        eprintln!("arguments must be valid UTF-8");
-        return ExitCode::FAILURE;
-    };
-
-    let paths = std::iter::once(path).chain(rest_paths);
+    let paths = path.iter().map(String::as_str);
 
     let no_terminal = !std::io::stdout().is_terminal() || env::var("NO_COLOR").is_ok();
 
     let on_error = |e: search::Error, path: &str| match e {
         search::Error::Io(err) => {
-            eprintln!("{program_name}:{path} IO error for operation on path {path}: {err}")
+            eprintln!("{PROGRAMM_NAME}:{path} IO error for operation on path {path}: {err}")
         }
-        search::Error::Pattern(err) => eprintln!("{program_name}: pattern error: {err}"),
+        search::Error::Pattern(err) => eprintln!("{PROGRAMM_NAME}: pattern error: {err}"),
     };
 
     let result = if no_terminal {
