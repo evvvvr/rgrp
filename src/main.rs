@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 
 use std::env;
 use std::io::IsTerminal;
@@ -13,25 +13,52 @@ const PROGRAM_NAME: &str = "rgrp";
 #[derive(Parser)]
 #[command(name=PROGRAM_NAME)]
 struct Cli {
-    /// Regular expression pattern to search for
-    pattern: String,
+    /// A pattern to search for
+    #[arg(short = 'e', long = "regexp", value_name = "PATTERN")]
+    regexp: Option<String>,
 
-    /// File path to search in
-    path: Vec<String>,
+    /// Regular expression pattern to search for, followed by paths to search in
+    /// (or, if -e/--regexp is given, only paths to search in)
+    args: Vec<String>,
+}
+
+struct Options {
+    regexp: String,
+    files: Vec<String>,
+}
+
+fn parse_options() -> Options {
+    let cli = Cli::parse();
+
+    let (pattern, path) = match cli.regexp {
+        Some(pattern) => (pattern, cli.args),
+        None => {
+            let mut args = cli.args.into_iter();
+            let Some(pattern) = args.next() else {
+                Cli::command()
+                    .error(
+                        clap::error::ErrorKind::MissingRequiredArgument,
+                        "the following required arguments were not provided:\n  <PATTERN>",
+                    )
+                    .exit();
+            };
+            (pattern, args.collect())
+        }
+    };
+
+    Options {
+        regexp: pattern,
+        files: path,
+    }
 }
 
 fn main() -> ExitCode {
     // CLI args:
-    // -e PATTERN, --regexp=PATTERN multiple
-    // if used all positional args are considerex to be pathes
     // -i, --ignore-case
     // -v, --invert-match
 
-    let cli = Cli::parse();
-    let pattern = &cli.pattern;
-    let path = cli.path;
-
-    let paths = path.iter().map(String::as_str);
+    let options = parse_options();
+    let paths = options.files.iter().map(String::as_str);
 
     let no_terminal = !std::io::stdout().is_terminal() || env::var("NO_COLOR").is_ok();
 
@@ -43,9 +70,9 @@ fn main() -> ExitCode {
     };
 
     let result = if no_terminal {
-        run(pattern, paths, || MonochromePrinter {}, on_error)
+        run(&options.regexp, paths, || MonochromePrinter {}, on_error)
     } else {
-        run(pattern, paths, ColorPrinter::new, on_error)
+        run(&options.regexp, paths, ColorPrinter::new, on_error)
     };
 
     if result.is_err() {
