@@ -2,7 +2,6 @@ use regex::Regex;
 use std::fs;
 use std::io::BufRead;
 use std::io::BufReader;
-use std::io::ErrorKind;
 
 use crate::printer::Printer;
 
@@ -35,17 +34,55 @@ impl From<regex::Error> for Error {
     }
 }
 
-pub fn search<T: Printer>(pattern: &str, path: &str, printer: &mut T) -> Result<(), Error> {
-    let binding = fs::canonicalize(path)?;
-    let Some(path) = binding.to_str() else {
-        return Err(Error::Io(std::io::Error::new(
-            ErrorKind::InvalidFilename,
-            "Invalid path",
-        )));
-    };
+pub fn search<T: Printer>(
+    pattern: &str,
+    path: &str,
+    make_printer: &mut impl FnMut() -> T,
+) -> Result<(), Error> {
+    search_regex(&Regex::new(pattern)?, path, make_printer)
+}
 
-    let re = Regex::new(pattern)?;
-    let file = fs::File::open(path)?;
+pub fn search_regex<T: Printer>(
+    re: &regex::Regex,
+    path: &str,
+    make_printer: &mut impl FnMut() -> T,
+) -> Result<(), Error> {
+    // symlink_metadata (unlike metadata) reports the entry's own type instead
+    // of following the symlink, so this check actually catches symlinks
+    let metadata = fs::symlink_metadata(path)?;
+
+    if metadata.is_symlink() {
+        // skip for now - this could lead to infinite cycles
+        return Ok(());
+    }
+
+    if metadata.is_dir() {
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            let entry_path = entry.path();
+            let Some(entry_path) = entry_path.to_str() else {
+                // non-UTF8 path - skip rather than aborting the whole walk
+                eprintln!(
+                    "rgrp: skipping non-UTF8 path: {}",
+                    entry_path.to_string_lossy()
+                );
+                continue;
+            };
+            search_regex(re, entry_path, make_printer)?;
+        }
+        return Ok(());
+    }
+
+    if !metadata.is_file() {
+        // Something we don't know how to work with
+        return Ok(());
+    }
+
+    return search_file(&re, path, &mut make_printer());
+}
+
+fn search_file<T: Printer>(pattern: &Regex, file_path: &str, printer: &mut T) -> Result<(), Error> {
+    let file = fs::File::open(file_path)?;
     let mut reader = BufReader::new(file);
 
     let mut buf = String::new();
@@ -62,8 +99,8 @@ pub fn search<T: Printer>(pattern: &str, path: &str, printer: &mut T) -> Result<
             }
             Ok(_) => {
                 let line = buf.trim_end_matches(['\r', '\n']);
-                if let Some(m) = re.find(line) {
-                    printer.print(path, line_number, line, &m);
+                if let Some(m) = pattern.find(line) {
+                    printer.print(file_path, line_number, line, &m);
                 }
             }
             Err(err) => return Err(Error::Io(err)),

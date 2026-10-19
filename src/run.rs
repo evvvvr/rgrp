@@ -14,7 +14,7 @@ pub fn run<'a, P: Printer>(
     let mut had_error = false;
 
     for path in paths {
-        if let Err(err) = search(pattern, path, &mut make_printer()) {
+        if let Err(err) = search(pattern, path, &mut make_printer) {
             had_error = true;
             on_error(err, path);
         }
