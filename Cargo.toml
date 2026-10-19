@@ -6,3 +6,6 @@ edition = "2024"
 [dependencies]
 owo-colors = "4.4.0"
 regex = "1.13.1"
+
+[dev-dependencies]
+tempfile = "3.23.0"
