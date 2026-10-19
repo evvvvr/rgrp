@@ -1,14 +1,25 @@
 use std::env;
 use std::io::IsTerminal;
+use std::path::Path;
 use std::process::ExitCode;
 
 use rgrp::printer::{ColorPrinter, MonochromePrinter};
 use rgrp::run::run;
+use rgrp::search;
 
 const USAGE_HINT: &str = "usage: rgrp [OPTIONS] PATTERN PATH";
 
 fn main() -> ExitCode {
-    let mut args = env::args_os().skip(1);
+    let mut args = env::args_os();
+    let program_name = args
+        .next()
+        .and_then(|a| {
+            Path::new(&a)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| "rgrp".to_owned());
     let pattern = args.next();
     let path = args.next();
 
@@ -35,15 +46,20 @@ fn main() -> ExitCode {
 
     let no_terminal = !std::io::stdout().is_terminal() || env::var("NO_COLOR").is_ok();
 
-    let error = if no_terminal {
-        run(pattern, paths, || MonochromePrinter {})
-    } else {
-        run(pattern, paths, ColorPrinter::new)
+    let on_error = |e: search::Error, path: &str| match e {
+        search::Error::Io(err) => {
+            eprintln!("{program_name}:{path} IO error for operation on path {path}: {err}")
+        }
+        search::Error::Pattern(err) => eprintln!("{program_name}: pattern error: {err}"),
     };
 
-    if let Some(e) = error {
-        //TODO: print all errors, not the first one
-        eprintln!("{e}");
+    let result = if no_terminal {
+        run(pattern, paths, || MonochromePrinter {}, on_error)
+    } else {
+        run(pattern, paths, ColorPrinter::new, on_error)
+    };
+
+    if result.is_err() {
         return ExitCode::FAILURE;
     }
 
