@@ -5,7 +5,7 @@ use std::io::IsTerminal;
 use std::process::ExitCode;
 
 use rgrp::printer::{ColorPrinter, MonochromePrinter};
-use rgrp::run::{Options, run};
+use rgrp::run::{self, Options, run};
 use rgrp::search;
 
 const PROGRAM_NAME: &str = "rgrp";
@@ -17,7 +17,7 @@ struct Cli {
     #[arg(short = 'e', long = "regexp", value_name = "PATTERN")]
     regexp: Option<String>,
 
-    /// Regular expression pattern to search for, followed by paths to search in
+    /// Regular expression pattern to search for, followed by paths to search in.
     /// (or, if -e/--regexp is given, only paths to search in)
     args: Vec<String>,
 }
@@ -61,6 +61,9 @@ fn main() -> ExitCode {
             eprintln!("{PROGRAM_NAME}:{path} IO error for operation on path {path}: {err}")
         }
         search::Error::Pattern(err) => eprintln!("{PROGRAM_NAME}: pattern error: {err}"),
+        search::Error::NonUtf8Path => {
+            eprintln!("{PROGRAM_NAME}: skipping non-UTF8 path: {path}")
+        }
     };
 
     let result = if no_terminal {
@@ -69,9 +72,12 @@ fn main() -> ExitCode {
         run(&options, ColorPrinter::new, on_error)
     };
 
-    if result.is_err() {
-        return ExitCode::FAILURE;
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(run::Error::Pattern(err)) => {
+            eprintln!("{PROGRAM_NAME}: invalid search pattern: {err}");
+            ExitCode::FAILURE
+        }
+        Err(run::Error::SearchFailed) => ExitCode::FAILURE,
     }
-
-    ExitCode::SUCCESS
 }

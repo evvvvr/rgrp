@@ -3,6 +3,7 @@ mod common;
 use std::fs;
 
 use common::SharedRecorder;
+use regex::Regex;
 use rgrp::search::{self, search};
 use tempfile::tempdir;
 
@@ -14,9 +15,13 @@ fn finds_matches_in_every_file_of_a_flat_directory() {
     fs::write(dir.path().join("c.txt"), "no match here\n").unwrap();
 
     let recorder = SharedRecorder::new();
-    search("hello", dir.path().to_str().unwrap(), &mut || {
-        recorder.printer()
-    })
+    let re = Regex::new("hello").unwrap();
+    search(
+        &re,
+        dir.path().to_str().unwrap(),
+        &mut || recorder.printer(),
+        &mut |_, _| {},
+    )
     .unwrap();
 
     let mut lines: Vec<String> = recorder.matches().into_iter().map(|m| m.line).collect();
@@ -33,9 +38,13 @@ fn recurses_into_nested_subdirectories() {
     fs::write(nested.join("deep.txt"), "needle deep inside\n").unwrap();
 
     let recorder = SharedRecorder::new();
-    search("needle", dir.path().to_str().unwrap(), &mut || {
-        recorder.printer()
-    })
+    let re = Regex::new("needle").unwrap();
+    search(
+        &re,
+        dir.path().to_str().unwrap(),
+        &mut || recorder.printer(),
+        &mut |_, _| {},
+    )
     .unwrap();
 
     assert_eq!(recorder.matches().len(), 2);
@@ -46,9 +55,13 @@ fn empty_directory_produces_no_matches_and_no_error() {
     let dir = tempdir().unwrap();
 
     let recorder = SharedRecorder::new();
-    search("anything", dir.path().to_str().unwrap(), &mut || {
-        recorder.printer()
-    })
+    let re = Regex::new("anything").unwrap();
+    search(
+        &re,
+        dir.path().to_str().unwrap(),
+        &mut || recorder.printer(),
+        &mut |_, _| {},
+    )
     .unwrap();
 
     assert_eq!(recorder.matches().len(), 0);
@@ -62,7 +75,14 @@ fn single_file_path_is_searched_directly() {
     fs::write(&file, "a needle in a file\n").unwrap();
 
     let recorder = SharedRecorder::new();
-    search("needle", file.to_str().unwrap(), &mut || recorder.printer()).unwrap();
+    let re = Regex::new("needle").unwrap();
+    search(
+        &re,
+        file.to_str().unwrap(),
+        &mut || recorder.printer(),
+        &mut |_, _| {},
+    )
+    .unwrap();
 
     assert_eq!(recorder.matches().len(), 1);
 }
@@ -73,7 +93,13 @@ fn nonexistent_path_returns_io_error() {
     let missing = dir.path().join("does-not-exist");
 
     let recorder = SharedRecorder::new();
-    let result = search("x", missing.to_str().unwrap(), &mut || recorder.printer());
+    let re = Regex::new("x").unwrap();
+    let result = search(
+        &re,
+        missing.to_str().unwrap(),
+        &mut || recorder.printer(),
+        &mut |_, _| {},
+    );
 
     assert!(matches!(result, Err(search::Error::Io(_))));
 }
@@ -88,9 +114,13 @@ fn symlinks_are_skipped_rather_than_followed() {
     symlink(dir.path().join("real.txt"), dir.path().join("link.txt")).unwrap();
 
     let recorder = SharedRecorder::new();
-    search("needle", dir.path().to_str().unwrap(), &mut || {
-        recorder.printer()
-    })
+    let re = Regex::new("needle").unwrap();
+    search(
+        &re,
+        dir.path().to_str().unwrap(),
+        &mut || recorder.printer(),
+        &mut |_, _| {},
+    )
     .unwrap();
 
     // Only the real file is visited; the symlink doesn't duplicate the match.
@@ -112,9 +142,13 @@ fn non_utf8_path_is_skipped_without_aborting_the_walk() {
     fs::write(Path::new(dir.path()).join(bad_name), "needle too\n").unwrap();
 
     let recorder = SharedRecorder::new();
-    search("needle", dir.path().to_str().unwrap(), &mut || {
-        recorder.printer()
-    })
+    let re = Regex::new("needle").unwrap();
+    search(
+        &re,
+        dir.path().to_str().unwrap(),
+        &mut || recorder.printer(),
+        &mut |_, _| {},
+    )
     .unwrap();
 
     // The non-UTF8 entry is skipped; the walk still finds the valid file.

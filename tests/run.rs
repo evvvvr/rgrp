@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::fs;
 
 use common::SharedRecorder;
-use rgrp::run::run;
+use rgrp::run::{Options, run};
 use tempfile::tempdir;
 
 #[test]
@@ -17,9 +17,16 @@ fn reports_matches_from_good_paths_and_errors_for_bad_ones() {
     let recorder = SharedRecorder::new();
     let errors = RefCell::new(Vec::new());
 
+    let options = Options {
+        regexp: "needle".to_string(),
+        files: vec![
+            good.to_str().unwrap().to_string(),
+            missing.to_str().unwrap().to_string(),
+        ],
+    };
+
     let result = run(
-        "needle",
-        [good.to_str().unwrap(), missing.to_str().unwrap()].into_iter(),
+        &options,
         || recorder.printer(),
         |_err, path| errors.borrow_mut().push(path.to_string()),
     );
@@ -38,9 +45,13 @@ fn succeeds_when_every_path_is_valid() {
     let recorder = SharedRecorder::new();
     let errors = RefCell::new(Vec::new());
 
+    let options = Options {
+        regexp: "needle".to_string(),
+        files: vec![file.to_str().unwrap().to_string()],
+    };
+
     let result = run(
-        "needle",
-        [file.to_str().unwrap()].into_iter(),
+        &options,
         || recorder.printer(),
         |_err, path| errors.borrow_mut().push(path.to_string()),
     );

@@ -9,6 +9,7 @@ use crate::printer::Printer;
 pub enum Error {
     Io(std::io::Error),
     Pattern(regex::Error),
+    NonUtf8Path,
 }
 
 impl std::fmt::Display for Error {
@@ -16,6 +17,7 @@ impl std::fmt::Display for Error {
         match self {
             Error::Io(err) => write!(f, "{err}"),
             Error::Pattern(err) => write!(f, "invalid search pattern: {err}"),
+            Error::NonUtf8Path => write!(f, "skipping non-UTF8 path"),
         }
     }
 }
@@ -35,17 +37,10 @@ impl From<regex::Error> for Error {
 }
 
 pub fn search<T: Printer>(
-    pattern: &str,
-    path: &str,
-    make_printer: &mut impl FnMut() -> T,
-) -> Result<(), Error> {
-    search_regex(&Regex::new(pattern)?, path, make_printer)
-}
-
-pub fn search_regex<T: Printer>(
     re: &regex::Regex,
     path: &str,
     make_printer: &mut impl FnMut() -> T,
+    on_error: &mut impl FnMut(Error, &str),
 ) -> Result<(), Error> {
     // symlink_metadata (unlike metadata) reports the entry's own type instead
     // of following the symlink, so this check actually catches symlinks
@@ -62,13 +57,10 @@ pub fn search_regex<T: Printer>(
             let entry_path = entry.path();
             let Some(entry_path) = entry_path.to_str() else {
                 // non-UTF8 path - skip rather than aborting the whole walk
-                eprintln!(
-                    "rgrp: skipping non-UTF8 path: {}",
-                    entry_path.to_string_lossy()
-                );
+                on_error(Error::NonUtf8Path, &entry_path.to_string_lossy());
                 continue;
             };
-            search_regex(re, entry_path, make_printer)?;
+            search(re, entry_path, make_printer, on_error)?;
         }
         return Ok(());
     }
@@ -78,7 +70,7 @@ pub fn search_regex<T: Printer>(
         return Ok(());
     }
 
-    return search_file(&re, path, &mut make_printer());
+    search_file(re, path, &mut make_printer())
 }
 
 fn search_file<T: Printer>(pattern: &Regex, file_path: &str, printer: &mut T) -> Result<(), Error> {
@@ -112,7 +104,6 @@ fn search_reader<T: Printer>(
             }
             Err(err) if err.kind() == std::io::ErrorKind::InvalidData => {
                 // non-UTF8 file contents - skip rather than aborting the whole walk
-                eprintln!("rgrp: skipping non-UTF8 file: {file_path}: {err}");
                 return Ok(());
             }
             Err(err) => return Err(Error::Io(err)),
