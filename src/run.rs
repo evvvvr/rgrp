@@ -1,14 +1,24 @@
 use crate::{
     printer::Printer,
-    search::{Error, search},
+    search::{self, search},
 };
+
+pub struct Error;
 
 pub fn run<'a, P: Printer>(
     pattern: &str,
     paths: impl Iterator<Item = &'a str>,
     mut make_printer: impl FnMut() -> P,
-) -> Option<Error> {
-    paths
-        .map(|path| search(pattern, path, &mut make_printer()))
-        .find_map(Result::err)
+    mut on_error: impl FnMut(search::Error, &str),
+) -> Result<(), Error> {
+    let mut had_error = false;
+
+    for path in paths {
+        if let Err(err) = search(pattern, path, &mut make_printer) {
+            had_error = true;
+            on_error(err, path);
+        }
+    }
+
+    if had_error { Err(Error) } else { Ok(()) }
 }
