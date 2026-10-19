@@ -110,6 +110,11 @@ fn search_reader<T: Printer>(
                     printer.print(file_path, line_number, line, &m);
                 }
             }
+            Err(err) if err.kind() == std::io::ErrorKind::InvalidData => {
+                // non-UTF8 file contents - skip rather than aborting the whole walk
+                eprintln!("rgrp: skipping non-UTF8 file: {file_path}: {err}");
+                return Ok(());
+            }
             Err(err) => return Err(Error::Io(err)),
         }
 

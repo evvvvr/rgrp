@@ -8,10 +8,10 @@ use rgrp::printer::{ColorPrinter, MonochromePrinter};
 use rgrp::run::run;
 use rgrp::search;
 
-const PROGRAMM_NAME: &str = "rgrp";
+const PROGRAM_NAME: &str = "rgrp";
 
 #[derive(Parser)]
-#[command(name=PROGRAMM_NAME)]
+#[command(name=PROGRAM_NAME)]
 struct Cli {
     /// Regular expression pattern to search for
     pattern: String,
@@ -37,9 +37,9 @@ fn main() -> ExitCode {
 
     let on_error = |e: search::Error, path: &str| match e {
         search::Error::Io(err) => {
-            eprintln!("{PROGRAMM_NAME}:{path} IO error for operation on path {path}: {err}")
+            eprintln!("{PROGRAM_NAME}:{path} IO error for operation on path {path}: {err}")
         }
-        search::Error::Pattern(err) => eprintln!("{PROGRAMM_NAME}: pattern error: {err}"),
+        search::Error::Pattern(err) => eprintln!("{PROGRAM_NAME}: pattern error: {err}"),
     };
 
     let result = if no_terminal {
