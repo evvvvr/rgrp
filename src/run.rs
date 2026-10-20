@@ -1,24 +1,65 @@
+use regex::RegexBuilder;
+
 use crate::{
     printer::Printer,
     search::{self, search},
 };
 
-pub struct Error;
+pub enum Error {
+    Pattern(regex::Error),
+    SearchFailed,
+}
 
-pub fn run<'a, P: Printer>(
-    pattern: &str,
-    paths: impl Iterator<Item = &'a str>,
+impl From<regex::Error> for Error {
+    fn from(e: regex::Error) -> Self {
+        Error::Pattern(e)
+    }
+}
+
+pub struct Options {
+    pub regexps: Vec<String>,
+    pub files: Vec<String>,
+    pub ignore_case: bool,
+    pub invert_matches: bool,
+}
+
+pub fn run<P: Printer>(
+    options: &Options,
     mut make_printer: impl FnMut() -> P,
     mut on_error: impl FnMut(search::Error, &str),
 ) -> Result<(), Error> {
+    let patterns = options
+        .regexps
+        .iter()
+        .map(|regexp| {
+            RegexBuilder::new(regexp)
+                .case_insensitive(options.ignore_case)
+                .build()
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
     let mut had_error = false;
 
-    for path in paths {
-        if let Err(err) = search(pattern, path, &mut make_printer) {
+    let search_options = search::Options {
+        invert_matches: options.invert_matches,
+    };
+
+    for path in &options.files {
+        if let Err(err) = search(
+            &patterns,
+            path,
+            &search_options,
+            &mut make_printer,
+            &mut on_error,
+        ) {
             had_error = true;
             on_error(err, path);
         }
     }
 
-    if had_error { Err(Error) } else { Ok(()) }
+    if had_error {
+        Err(Error::SearchFailed)
+    } else {
+        Ok(())
+    }
 }
