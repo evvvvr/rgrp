@@ -13,13 +13,20 @@ const PROGRAM_NAME: &str = "rgrp";
 #[derive(Parser)]
 #[command(name=PROGRAM_NAME)]
 struct Cli {
-    /// A pattern to search for (may be given multiple times)
+    // CLI args:
+    // -i, --ignore-case
+    // -v, --invert-match
+    /// A pattern to search for (may be given multiple times).
     #[arg(short = 'e', long = "regexp", value_name = "PATTERN")]
     regexp: Vec<String>,
 
-    /// Regular expression pattern to search for, followed by paths to search in.
-    /// (or, if -e/--regexp is given, only paths to search in)
+    /// Regular expression pattern to search for, followed by paths to search in
+    /// (or, if -e/--regexp is given, only paths to search in).
     args: Vec<String>,
+
+    /// When this flag is provided, all patterns will be searched case insensitively.
+    #[arg(short = 'i', long = "ignore_case")]
+    ignore_case: bool,
 }
 
 fn parse_options() -> Options {
@@ -43,14 +50,11 @@ fn parse_options() -> Options {
     Options {
         regexps: patterns,
         files: path,
+        ignore_case: cli.ignore_case,
     }
 }
 
 fn main() -> ExitCode {
-    // CLI args:
-    // -i, --ignore-case
-    // -v, --invert-match
-
     let options = parse_options();
 
     let no_terminal = !std::io::stdout().is_terminal() || env::var("NO_COLOR").is_ok();

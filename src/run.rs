@@ -1,4 +1,4 @@
-use regex::Regex;
+use regex::RegexBuilder;
 
 use crate::{
     printer::Printer,
@@ -19,6 +19,7 @@ impl From<regex::Error> for Error {
 pub struct Options {
     pub regexps: Vec<String>,
     pub files: Vec<String>,
+    pub ignore_case: bool,
 }
 
 pub fn run<P: Printer>(
@@ -29,7 +30,11 @@ pub fn run<P: Printer>(
     let patterns = options
         .regexps
         .iter()
-        .map(|regexp| Regex::new(regexp))
+        .map(|regexp| {
+            RegexBuilder::new(regexp)
+                .case_insensitive(options.ignore_case)
+                .build()
+        })
         .collect::<Result<Vec<_>, _>>()?;
 
     let mut had_error = false;
