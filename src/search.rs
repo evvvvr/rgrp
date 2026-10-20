@@ -84,7 +84,7 @@ fn search_file<T: Printer>(
 
 fn search_reader<T: Printer>(
     patterns: &[Regex],
-    file_path: &str,
+    _file_path: &str,
     mut reader: impl BufRead,
     printer: &mut T,
 ) -> Result<(), Error> {
@@ -102,10 +102,42 @@ fn search_reader<T: Printer>(
             }
             Ok(_) => {
                 let line = buf.trim_end_matches(['\r', '\n']);
+
+                // Make a flat list of matches for all patterns ordered by start index
+                // This allows to walk over all matches for all patterns sequentially
+                let mut all_matches: Vec<regex::Match> = Vec::new();
+
                 for pattern in patterns {
                     for m in pattern.find_iter(line) {
-                        printer.print(file_path, line_number, line, &m);
+                        all_matches.push(m);
                     }
+                }
+
+                all_matches.sort_by(|a, b| a.start().cmp(&b.start()));
+
+                let mut had_matches = false;
+                let mut printed_char_index = 0;
+
+                for m in all_matches {
+                    had_matches = true;
+                    // check if we already have printed the prefix
+                    let mut prefix = "";
+                    if m.start() > printed_char_index {
+                        // we didnt print this part yet
+                        prefix = &line[printed_char_index..m.start()];
+                    }
+                    let matched = &line[m.start()..m.end()];
+                    print!("{prefix}*{matched}*");
+                    printed_char_index = m.end();
+                }
+
+                // printer.print(file_path, line_number, line, &m);
+                if had_matches {
+                    if printed_char_index < line.len() {
+                        // print the rest of the line
+                        print!("{}", &line[printed_char_index..]);
+                    }
+                    println!();
                 }
             }
             Err(err) if err.kind() == std::io::ErrorKind::InvalidData => {
