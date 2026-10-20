@@ -84,7 +84,7 @@ fn search_file<T: Printer>(
 
 fn search_reader<T: Printer>(
     patterns: &[Regex],
-    _file_path: &str,
+    file_path: &str,
     mut reader: impl BufRead,
     printer: &mut T,
 ) -> Result<(), Error> {
@@ -115,29 +115,8 @@ fn search_reader<T: Printer>(
 
                 all_matches.sort_by(|a, b| a.start().cmp(&b.start()));
 
-                let mut had_matches = false;
-                let mut printed_char_index = 0;
-
-                for m in all_matches {
-                    had_matches = true;
-                    // check if we already have printed the prefix
-                    let mut prefix = "";
-                    if m.start() > printed_char_index {
-                        // we didnt print this part yet
-                        prefix = &line[printed_char_index..m.start()];
-                    }
-                    let matched = &line[m.start()..m.end()];
-                    print!("{prefix}*{matched}*");
-                    printed_char_index = m.end();
-                }
-
-                // printer.print(file_path, line_number, line, &m);
-                if had_matches {
-                    if printed_char_index < line.len() {
-                        // print the rest of the line
-                        print!("{}", &line[printed_char_index..]);
-                    }
-                    println!();
+                if !all_matches.is_empty() {
+                    printer.print(file_path, line_number, line, &all_matches);
                 }
             }
             Err(err) if err.kind() == std::io::ErrorKind::InvalidData => {
@@ -166,6 +145,10 @@ mod tests {
 
     struct RecordingPrinter {
         matches: Vec<RecordedMatch>,
+        // how many times `print` itself was called, as opposed to how many
+        // matches were reported - a line with several matches must still
+        // be reported through a single `print` call
+        print_call_count: u32,
         eof_count: u32,
     }
 
@@ -173,19 +156,23 @@ mod tests {
         fn new() -> Self {
             Self {
                 matches: Vec::new(),
+                print_call_count: 0,
                 eof_count: 0,
             }
         }
     }
 
     impl Printer for RecordingPrinter {
-        fn print(&mut self, _file_path: &str, line_no: u64, line: &str, m: &regex::Match) {
-            self.matches.push(RecordedMatch {
-                line_no,
-                line: line.to_string(),
-                match_start: m.start(),
-                match_end: m.end(),
-            });
+        fn print(&mut self, _file_path: &str, line_no: u64, line: &str, matches: &[regex::Match]) {
+            self.print_call_count += 1;
+            for m in matches {
+                self.matches.push(RecordedMatch {
+                    line_no,
+                    line: line.to_string(),
+                    match_start: m.start(),
+                    match_end: m.end(),
+                });
+            }
         }
 
         fn on_eof(&mut self) {
@@ -194,9 +181,19 @@ mod tests {
     }
 
     fn run_reader(pattern: &str, input: &str) -> RecordingPrinter {
-        let re = Regex::new(pattern).unwrap();
+        run_reader_multi(&[pattern], input)
+    }
+
+    fn run_reader_multi(patterns: &[&str], input: &str) -> RecordingPrinter {
+        let patterns: Vec<Regex> = patterns.iter().map(|p| Regex::new(p).unwrap()).collect();
         let mut printer = RecordingPrinter::new();
-        search_reader(&[re], "<test>", Cursor::new(input.as_bytes()), &mut printer).unwrap();
+        search_reader(
+            &patterns,
+            "<test>",
+            Cursor::new(input.as_bytes()),
+            &mut printer,
+        )
+        .unwrap();
         printer
     }
 
@@ -247,5 +244,52 @@ mod tests {
         let printer = run_reader("foo", "");
         assert_eq!(printer.eof_count, 1);
         assert_eq!(printer.matches.len(), 0);
+    }
+
+    #[test]
+    fn multiple_matches_on_one_line_are_reported_in_a_single_call() {
+        let printer = run_reader("foo", "foo bar foo\n");
+        assert_eq!(printer.print_call_count, 1);
+
+        let offsets: Vec<(usize, usize)> = printer
+            .matches
+            .iter()
+            .map(|m| (m.match_start, m.match_end))
+            .collect();
+        assert_eq!(offsets, vec![(0, 3), (8, 11)]);
+    }
+
+    #[test]
+    fn matches_from_different_patterns_on_one_line_are_merged_in_order() {
+        let printer = run_reader_multi(&["foo", "bar"], "foo bar\n");
+        assert_eq!(printer.print_call_count, 1);
+
+        let offsets: Vec<(usize, usize)> = printer
+            .matches
+            .iter()
+            .map(|m| (m.match_start, m.match_end))
+            .collect();
+        assert_eq!(offsets, vec![(0, 3), (4, 7)]);
+    }
+
+    #[test]
+    fn matches_are_sorted_by_start_even_when_patterns_find_them_out_of_order() {
+        // "bar" is searched for before "foo" but appears later in the line,
+        // so the merged matches must still come out in line order
+        let printer = run_reader_multi(&["bar", "foo"], "foo bar\n");
+
+        let offsets: Vec<(usize, usize)> = printer
+            .matches
+            .iter()
+            .map(|m| (m.match_start, m.match_end))
+            .collect();
+        assert_eq!(offsets, vec![(0, 3), (4, 7)]);
+    }
+
+    #[test]
+    fn print_is_not_called_once_per_match() {
+        let printer = run_reader("foo", "foo foo foo\nfoo\n");
+        // 2 lines with matches -> 2 calls, regardless of 4 total matches
+        assert_eq!(printer.print_call_count, 2);
     }
 }
