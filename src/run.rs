@@ -20,6 +20,7 @@ pub struct Options {
     pub regexps: Vec<String>,
     pub files: Vec<String>,
     pub ignore_case: bool,
+    pub invert_matches: bool,
 }
 
 pub fn run<P: Printer>(
@@ -39,8 +40,18 @@ pub fn run<P: Printer>(
 
     let mut had_error = false;
 
+    let search_options = search::Options {
+        invert_matches: options.invert_matches,
+    };
+
     for path in &options.files {
-        if let Err(err) = search(&patterns, path, &mut make_printer, &mut on_error) {
+        if let Err(err) = search(
+            &patterns,
+            path,
+            &search_options,
+            &mut make_printer,
+            &mut on_error,
+        ) {
             had_error = true;
             on_error(err, path);
         }

@@ -49,14 +49,12 @@ impl SharedRecorder {
 pub struct RecordingPrinter(Rc<RefCell<Recorded>>);
 
 impl Printer for RecordingPrinter {
-    fn print(&mut self, file_path: &str, line_no: u64, line: &str, matches: &[regex::Match]) {
-        for _ in matches {
-            self.0.borrow_mut().matches.push(RecordedMatch {
-                file_path: file_path.to_string(),
-                line_no,
-                line: line.to_string(),
-            });
-        }
+    fn print(&mut self, file_path: &str, line_no: u64, line: &str, _matches: &[regex::Match]) {
+        self.0.borrow_mut().matches.push(RecordedMatch {
+            file_path: file_path.to_string(),
+            line_no,
+            line: line.to_string(),
+        });
     }
 
     fn on_eof(&mut self) {

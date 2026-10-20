@@ -24,6 +24,7 @@ fn reports_matches_from_good_paths_and_errors_for_bad_ones() {
             missing.to_str().unwrap().to_string(),
         ],
         ignore_case: false,
+        invert_matches: false,
     };
 
     let result = run(
@@ -50,6 +51,7 @@ fn succeeds_when_every_path_is_valid() {
         regexps: vec!["needle".to_string()],
         files: vec![file.to_str().unwrap().to_string()],
         ignore_case: false,
+        invert_matches: false,
     };
 
     let result = run(
@@ -74,6 +76,7 @@ fn ignore_case_matches_regardless_of_letter_case() {
         regexps: vec!["needle".to_string()],
         files: vec![file.to_str().unwrap().to_string()],
         ignore_case: true,
+        invert_matches: false,
     };
 
     let result = run(&options, || recorder.printer(), |_err, _path| {});
@@ -95,6 +98,7 @@ fn without_ignore_case_only_exact_case_matches() {
         regexps: vec!["needle".to_string()],
         files: vec![file.to_str().unwrap().to_string()],
         ignore_case: false,
+        invert_matches: false,
     };
 
     let result = run(&options, || recorder.printer(), |_err, _path| {});
@@ -102,4 +106,26 @@ fn without_ignore_case_only_exact_case_matches() {
     assert!(result.is_ok());
     let lines: Vec<String> = recorder.matches().into_iter().map(|m| m.line).collect();
     assert_eq!(lines, vec!["needle"]);
+}
+
+#[test]
+fn invert_match_reports_lines_that_do_not_match() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("mixed.txt");
+    fs::write(&file, "needle\nhaystack\nneedle in a haystack\nplain\n").unwrap();
+
+    let recorder = SharedRecorder::new();
+
+    let options = Options {
+        regexps: vec!["needle".to_string()],
+        files: vec![file.to_str().unwrap().to_string()],
+        ignore_case: false,
+        invert_matches: true,
+    };
+
+    let result = run(&options, || recorder.printer(), |_err, _path| {});
+
+    assert!(result.is_ok());
+    let lines: Vec<String> = recorder.matches().into_iter().map(|m| m.line).collect();
+    assert_eq!(lines, vec!["haystack", "plain"]);
 }

@@ -19,6 +19,9 @@ fn finds_matches_in_every_file_of_a_flat_directory() {
     search(
         &[re],
         dir.path().to_str().unwrap(),
+        &search::Options {
+            invert_matches: false,
+        },
         &mut || recorder.printer(),
         &mut |_, _| {},
     )
@@ -42,6 +45,9 @@ fn recurses_into_nested_subdirectories() {
     search(
         &[re],
         dir.path().to_str().unwrap(),
+        &search::Options {
+            invert_matches: false,
+        },
         &mut || recorder.printer(),
         &mut |_, _| {},
     )
@@ -59,6 +65,9 @@ fn empty_directory_produces_no_matches_and_no_error() {
     search(
         &[re],
         dir.path().to_str().unwrap(),
+        &search::Options {
+            invert_matches: false,
+        },
         &mut || recorder.printer(),
         &mut |_, _| {},
     )
@@ -79,6 +88,9 @@ fn single_file_path_is_searched_directly() {
     search(
         &[re],
         file.to_str().unwrap(),
+        &search::Options {
+            invert_matches: false,
+        },
         &mut || recorder.printer(),
         &mut |_, _| {},
     )
@@ -97,6 +109,9 @@ fn nonexistent_path_returns_io_error() {
     let result = search(
         &[re],
         missing.to_str().unwrap(),
+        &search::Options {
+            invert_matches: false,
+        },
         &mut || recorder.printer(),
         &mut |_, _| {},
     );
@@ -118,6 +133,9 @@ fn symlinks_are_skipped_rather_than_followed() {
     search(
         &[re],
         dir.path().to_str().unwrap(),
+        &search::Options {
+            invert_matches: false,
+        },
         &mut || recorder.printer(),
         &mut |_, _| {},
     )
@@ -146,6 +164,9 @@ fn non_utf8_path_is_skipped_without_aborting_the_walk() {
     search(
         &[re],
         dir.path().to_str().unwrap(),
+        &search::Options {
+            invert_matches: false,
+        },
         &mut || recorder.printer(),
         &mut |_, _| {},
     )

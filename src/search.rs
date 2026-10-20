@@ -36,9 +36,14 @@ impl From<regex::Error> for Error {
     }
 }
 
+pub struct Options {
+    pub invert_matches: bool,
+}
+
 pub fn search<T: Printer>(
     patterns: &[Regex],
     path: &str,
+    options: &Options,
     make_printer: &mut impl FnMut() -> T,
     on_error: &mut impl FnMut(Error, &str),
 ) -> Result<(), Error> {
@@ -60,7 +65,7 @@ pub fn search<T: Printer>(
                 on_error(Error::NonUtf8Path, &entry_path.to_string_lossy());
                 continue;
             };
-            search(patterns, entry_path, make_printer, on_error)?;
+            search(patterns, entry_path, options, make_printer, on_error)?;
         }
         return Ok(());
     }
@@ -70,21 +75,23 @@ pub fn search<T: Printer>(
         return Ok(());
     }
 
-    search_file(patterns, path, &mut make_printer())
+    search_file(patterns, path, options, &mut make_printer())
 }
 
 fn search_file<T: Printer>(
     patterns: &[Regex],
     file_path: &str,
+    options: &Options,
     printer: &mut T,
 ) -> Result<(), Error> {
     let file = fs::File::open(file_path)?;
-    search_reader(patterns, file_path, BufReader::new(file), printer)
+    search_reader(patterns, file_path, options, BufReader::new(file), printer)
 }
 
 fn search_reader<T: Printer>(
     patterns: &[Regex],
     file_path: &str,
+    options: &Options,
     mut reader: impl BufRead,
     printer: &mut T,
 ) -> Result<(), Error> {
@@ -103,19 +110,24 @@ fn search_reader<T: Printer>(
             Ok(_) => {
                 let line = buf.trim_end_matches(['\r', '\n']);
 
-                // Make a flat list of matches for all patterns ordered by start index
-                // This allows to walk over all matches for all patterns sequentially
                 let mut all_matches: Vec<regex::Match> = Vec::new();
 
+                // Make a flat list of matches for all patterns
                 for pattern in patterns {
                     for m in pattern.find_iter(line) {
                         all_matches.push(m);
                     }
                 }
 
-                all_matches.sort_by(|a, b| a.start().cmp(&b.start()));
+                if options.invert_matches {
+                    // we are interested in lines with zero total matches
+                    if all_matches.is_empty() {
+                        printer.print(file_path, line_number, line, &all_matches);
+                    }
+                } else if !all_matches.is_empty() {
+                    // This allows to walk over all matches for all patterns sequentially
+                    all_matches.sort_by(|a, b| a.start().cmp(&b.start()));
 
-                if !all_matches.is_empty() {
                     printer.print(file_path, line_number, line, &all_matches);
                 }
             }
@@ -145,6 +157,10 @@ mod tests {
 
     struct RecordingPrinter {
         matches: Vec<RecordedMatch>,
+        // every line passed to `print`, regardless of how many (if any)
+        // matches it carried - needed to observe invert-match behavior,
+        // where `print` is called with zero matches
+        printed_lines: Vec<String>,
         // how many times `print` itself was called, as opposed to how many
         // matches were reported - a line with several matches must still
         // be reported through a single `print` call
@@ -156,6 +172,7 @@ mod tests {
         fn new() -> Self {
             Self {
                 matches: Vec::new(),
+                printed_lines: Vec::new(),
                 print_call_count: 0,
                 eof_count: 0,
             }
@@ -165,6 +182,7 @@ mod tests {
     impl Printer for RecordingPrinter {
         fn print(&mut self, _file_path: &str, line_no: u64, line: &str, matches: &[regex::Match]) {
             self.print_call_count += 1;
+            self.printed_lines.push(line.to_string());
             for m in matches {
                 self.matches.push(RecordedMatch {
                     line_no,
@@ -185,11 +203,26 @@ mod tests {
     }
 
     fn run_reader_multi(patterns: &[&str], input: &str) -> RecordingPrinter {
+        run_reader_with_options(
+            patterns,
+            input,
+            &Options {
+                invert_matches: false,
+            },
+        )
+    }
+
+    fn run_reader_with_options(
+        patterns: &[&str],
+        input: &str,
+        options: &Options,
+    ) -> RecordingPrinter {
         let patterns: Vec<Regex> = patterns.iter().map(|p| Regex::new(p).unwrap()).collect();
         let mut printer = RecordingPrinter::new();
         search_reader(
             &patterns,
             "<test>",
+            options,
             Cursor::new(input.as_bytes()),
             &mut printer,
         )
@@ -291,5 +324,45 @@ mod tests {
         let printer = run_reader("foo", "foo foo foo\nfoo\n");
         // 2 lines with matches -> 2 calls, regardless of 4 total matches
         assert_eq!(printer.print_call_count, 2);
+    }
+
+    #[test]
+    fn invert_matches_reports_only_lines_with_no_match() {
+        let printer = run_reader_with_options(
+            &["foo"],
+            "foo\nbar\nfoo bar\nbaz\n",
+            &Options {
+                invert_matches: true,
+            },
+        );
+
+        assert_eq!(printer.printed_lines, vec!["bar", "baz"]);
+    }
+
+    #[test]
+    fn invert_matches_with_multiple_patterns_excludes_lines_matching_any_pattern() {
+        let printer = run_reader_with_options(
+            &["foo", "bar"],
+            "foo\nbar\nfoo bar\nbaz\n",
+            &Options {
+                invert_matches: true,
+            },
+        );
+
+        assert_eq!(printer.printed_lines, vec!["baz"]);
+    }
+
+    #[test]
+    fn invert_matches_reports_no_match_offsets() {
+        let printer = run_reader_with_options(
+            &["foo"],
+            "bar\n",
+            &Options {
+                invert_matches: true,
+            },
+        );
+
+        assert_eq!(printer.matches.len(), 0);
+        assert_eq!(printer.print_call_count, 1);
     }
 }

@@ -13,9 +13,6 @@ const PROGRAM_NAME: &str = "rgrp";
 #[derive(Parser)]
 #[command(name=PROGRAM_NAME)]
 struct Cli {
-    // CLI args:
-    // -i, --ignore-case
-    // -v, --invert-match
     /// A pattern to search for (may be given multiple times).
     #[arg(short = 'e', long = "regexp", value_name = "PATTERN")]
     regexp: Vec<String>,
@@ -25,8 +22,13 @@ struct Cli {
     args: Vec<String>,
 
     /// When this flag is provided, all patterns will be searched case insensitively.
-    #[arg(short = 'i', long = "ignore_case")]
+    #[arg(short = 'i', long = "ignore-case")]
     ignore_case: bool,
+
+    /// This flag inverts matching.
+    /// That is, instead of printing lines that match, rgrp will print lines that don't match.
+    #[arg(short = 'v', long = "invert-match")]
+    invert_match: bool,
 }
 
 fn parse_options() -> Options {
@@ -51,6 +53,7 @@ fn parse_options() -> Options {
         regexps: patterns,
         files: path,
         ignore_case: cli.ignore_case,
+        invert_matches: cli.invert_match,
     }
 }
 
