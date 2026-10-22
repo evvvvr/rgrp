@@ -5,10 +5,15 @@ use std::io::BufReader;
 
 use crate::printer::Printer;
 
+/// Something that went wrong while walking or reading a single path.
 #[derive(Debug)]
 pub enum Error {
+    /// A filesystem operation failed (missing path, permissions, etc.).
     Io(std::io::Error),
+    /// One of the search patterns failed to compile.
     Pattern(regex::Error),
+    /// A directory entry's path isn't valid UTF-8, so it's skipped rather
+    /// than aborting the rest of the walk.
     NonUtf8Path,
 }
 
@@ -36,16 +41,37 @@ impl From<regex::Error> for Error {
     }
 }
 
+/// Knobs that change how a search behaves, independent of the pattern(s)
+/// used or which path is being searched.
+#[derive(Clone, Copy)]
 pub struct Options {
+    /// When true, report lines that *don't* match any pattern instead of
+    /// lines that do.
     pub invert_matches: bool,
 }
 
+/// Somewhere a directory's entries can be handed off for someone else to
+/// pick up later - the thing that makes a directory walk parallel. `search`
+/// only needs to be able to hand work off; it doesn't need to know how
+/// that work gets distributed or picked up.
+pub trait WorkQueue {
+    /// Hands off a batch of newly discovered paths at once (rather than
+    /// one at a time), so an implementation that needs to wake up other
+    /// workers can do that once per directory instead of once per entry.
+    fn enqueue(&self, paths: impl Iterator<Item = String>);
+}
+
+/// Searches one path against `patterns`.
+///
+/// A file is read line by line and matched directly. A directory isn't
+/// recursed into here - its entries are handed to `WorkQueue` for someone to pick up.
 pub fn search<T: Printer>(
     patterns: &[Regex],
     path: &str,
     options: &Options,
-    make_printer: &mut impl FnMut() -> T,
+    printer: &mut T,
     on_error: &mut impl FnMut(Error, &str),
+    queue: &impl WorkQueue,
 ) -> Result<(), Error> {
     // symlink_metadata (unlike metadata) reports the entry's own type instead
     // of following the symlink, so this check actually catches symlinks
@@ -57,6 +83,7 @@ pub fn search<T: Printer>(
     }
 
     if metadata.is_dir() {
+        let mut entries = Vec::new();
         for entry in fs::read_dir(path)? {
             let entry = entry?;
             let entry_path = entry.path();
@@ -65,8 +92,9 @@ pub fn search<T: Printer>(
                 on_error(Error::NonUtf8Path, &entry_path.to_string_lossy());
                 continue;
             };
-            search(patterns, entry_path, options, make_printer, on_error)?;
+            entries.push(entry_path.to_string());
         }
+        queue.enqueue(entries.into_iter());
         return Ok(());
     }
 
@@ -75,7 +103,7 @@ pub fn search<T: Printer>(
         return Ok(());
     }
 
-    search_file(patterns, path, options, &mut make_printer())
+    search_file(patterns, path, options, printer)
 }
 
 fn search_file<T: Printer>(

@@ -1,7 +1,7 @@
 mod common;
 
-use std::cell::RefCell;
 use std::fs;
+use std::sync::{Arc, Mutex};
 
 use common::SharedRecorder;
 use rgrp::run::{Options, run};
@@ -15,7 +15,8 @@ fn reports_matches_from_good_paths_and_errors_for_bad_ones() {
     let missing = dir.path().join("does-not-exist");
 
     let recorder = SharedRecorder::new();
-    let errors = RefCell::new(Vec::new());
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let errors_for_closure = errors.clone();
 
     let options = Options {
         regexps: vec!["needle".to_string()],
@@ -25,17 +26,22 @@ fn reports_matches_from_good_paths_and_errors_for_bad_ones() {
         ],
         ignore_case: false,
         invert_matches: false,
+        max_threads: 1,
     };
 
+    let recorder_for_closure = recorder.clone();
     let result = run(
         &options,
-        || recorder.printer(),
-        |_err, path| errors.borrow_mut().push(path.to_string()),
+        move || recorder_for_closure.printer(),
+        move |_err, path| errors_for_closure.lock().unwrap().push(path.to_string()),
     );
 
     assert!(result.is_err());
     assert_eq!(recorder.matches().len(), 1);
-    assert_eq!(errors.borrow().as_slice(), [missing.to_str().unwrap()]);
+    assert_eq!(
+        errors.lock().unwrap().as_slice(),
+        [missing.to_str().unwrap()]
+    );
 }
 
 #[test]
@@ -45,23 +51,26 @@ fn succeeds_when_every_path_is_valid() {
     fs::write(&file, "a needle here\n").unwrap();
 
     let recorder = SharedRecorder::new();
-    let errors = RefCell::new(Vec::new());
+    let recorder_for_closure = recorder.clone();
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let errors_for_closure = errors.clone();
 
     let options = Options {
         regexps: vec!["needle".to_string()],
         files: vec![file.to_str().unwrap().to_string()],
         ignore_case: false,
         invert_matches: false,
+        max_threads: 1,
     };
 
     let result = run(
         &options,
-        || recorder.printer(),
-        |_err, path| errors.borrow_mut().push(path.to_string()),
+        move || recorder_for_closure.printer(),
+        move |_err, path| errors_for_closure.lock().unwrap().push(path.to_string()),
     );
 
     assert!(result.is_ok());
-    assert!(errors.borrow().is_empty());
+    assert!(errors.lock().unwrap().is_empty());
 }
 
 #[test]
@@ -77,9 +86,15 @@ fn ignore_case_matches_regardless_of_letter_case() {
         files: vec![file.to_str().unwrap().to_string()],
         ignore_case: true,
         invert_matches: false,
+        max_threads: 1,
     };
 
-    let result = run(&options, || recorder.printer(), |_err, _path| {});
+    let recorder_for_closure = recorder.clone();
+    let result = run(
+        &options,
+        move || recorder_for_closure.printer(),
+        |_err, _path| {},
+    );
 
     assert!(result.is_ok());
     let lines: Vec<String> = recorder.matches().into_iter().map(|m| m.line).collect();
@@ -99,9 +114,15 @@ fn without_ignore_case_only_exact_case_matches() {
         files: vec![file.to_str().unwrap().to_string()],
         ignore_case: false,
         invert_matches: false,
+        max_threads: 1,
     };
 
-    let result = run(&options, || recorder.printer(), |_err, _path| {});
+    let recorder_for_closure = recorder.clone();
+    let result = run(
+        &options,
+        move || recorder_for_closure.printer(),
+        |_err, _path| {},
+    );
 
     assert!(result.is_ok());
     let lines: Vec<String> = recorder.matches().into_iter().map(|m| m.line).collect();
@@ -121,9 +142,15 @@ fn invert_match_reports_lines_that_do_not_match() {
         files: vec![file.to_str().unwrap().to_string()],
         ignore_case: false,
         invert_matches: true,
+        max_threads: 1,
     };
 
-    let result = run(&options, || recorder.printer(), |_err, _path| {});
+    let recorder_for_closure = recorder.clone();
+    let result = run(
+        &options,
+        move || recorder_for_closure.printer(),
+        |_err, _path| {},
+    );
 
     assert!(result.is_ok());
     let lines: Vec<String> = recorder.matches().into_iter().map(|m| m.line).collect();

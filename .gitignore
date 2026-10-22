@@ -2,3 +2,4 @@
 /input
 .vscode/
 out
+.DS_Store

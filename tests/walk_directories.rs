@@ -4,8 +4,34 @@ use std::fs;
 
 use common::SharedRecorder;
 use regex::Regex;
+use rgrp::concurrency::SharedWorkState;
 use rgrp::search::{self, search};
 use tempfile::tempdir;
+
+// `search` only expands one level of a directory into the shared queue and
+// returns; draining the queue (single-threaded, so there's no race to
+// worry about) is what actually walks the whole tree.
+fn walk(
+    patterns: &[Regex],
+    root: &str,
+    options: &search::Options,
+    mut make_printer: impl FnMut() -> common::RecordingPrinter,
+    mut on_error: impl FnMut(search::Error, &str),
+) -> Result<(), search::Error> {
+    let shared_state = SharedWorkState::new(&vec![root.to_string()]);
+    while let Some(path) = shared_state.work_queue.pop() {
+        let mut printer = make_printer();
+        search(
+            patterns,
+            &path,
+            options,
+            &mut printer,
+            &mut on_error,
+            &shared_state,
+        )?;
+    }
+    Ok(())
+}
 
 #[test]
 fn finds_matches_in_every_file_of_a_flat_directory() {
@@ -16,14 +42,14 @@ fn finds_matches_in_every_file_of_a_flat_directory() {
 
     let recorder = SharedRecorder::new();
     let re = Regex::new("hello").unwrap();
-    search(
+    walk(
         &[re],
         dir.path().to_str().unwrap(),
         &search::Options {
             invert_matches: false,
         },
         &mut || recorder.printer(),
-        &mut |_, _| {},
+        &mut |_: search::Error, _: &str| {},
     )
     .unwrap();
 
@@ -42,14 +68,14 @@ fn recurses_into_nested_subdirectories() {
 
     let recorder = SharedRecorder::new();
     let re = Regex::new("needle").unwrap();
-    search(
+    walk(
         &[re],
         dir.path().to_str().unwrap(),
         &search::Options {
             invert_matches: false,
         },
         &mut || recorder.printer(),
-        &mut |_, _| {},
+        &mut |_: search::Error, _: &str| {},
     )
     .unwrap();
 
@@ -62,14 +88,14 @@ fn empty_directory_produces_no_matches_and_no_error() {
 
     let recorder = SharedRecorder::new();
     let re = Regex::new("anything").unwrap();
-    search(
+    walk(
         &[re],
         dir.path().to_str().unwrap(),
         &search::Options {
             invert_matches: false,
         },
         &mut || recorder.printer(),
-        &mut |_, _| {},
+        &mut |_: search::Error, _: &str| {},
     )
     .unwrap();
 
@@ -85,14 +111,14 @@ fn single_file_path_is_searched_directly() {
 
     let recorder = SharedRecorder::new();
     let re = Regex::new("needle").unwrap();
-    search(
+    walk(
         &[re],
         file.to_str().unwrap(),
         &search::Options {
             invert_matches: false,
         },
         &mut || recorder.printer(),
-        &mut |_, _| {},
+        &mut |_: search::Error, _: &str| {},
     )
     .unwrap();
 
@@ -106,14 +132,14 @@ fn nonexistent_path_returns_io_error() {
 
     let recorder = SharedRecorder::new();
     let re = Regex::new("x").unwrap();
-    let result = search(
+    let result = walk(
         &[re],
         missing.to_str().unwrap(),
         &search::Options {
             invert_matches: false,
         },
         &mut || recorder.printer(),
-        &mut |_, _| {},
+        &mut |_: search::Error, _: &str| {},
     );
 
     assert!(matches!(result, Err(search::Error::Io(_))));
@@ -130,14 +156,14 @@ fn symlinks_are_skipped_rather_than_followed() {
 
     let recorder = SharedRecorder::new();
     let re = Regex::new("needle").unwrap();
-    search(
+    walk(
         &[re],
         dir.path().to_str().unwrap(),
         &search::Options {
             invert_matches: false,
         },
         &mut || recorder.printer(),
-        &mut |_, _| {},
+        &mut |_: search::Error, _: &str| {},
     )
     .unwrap();
 
@@ -161,14 +187,14 @@ fn non_utf8_path_is_skipped_without_aborting_the_walk() {
 
     let recorder = SharedRecorder::new();
     let re = Regex::new("needle").unwrap();
-    search(
+    walk(
         &[re],
         dir.path().to_str().unwrap(),
         &search::Options {
             invert_matches: false,
         },
         &mut || recorder.printer(),
-        &mut |_, _| {},
+        &mut |_: search::Error, _: &str| {},
     )
     .unwrap();
 
