@@ -29,6 +29,11 @@ struct Cli {
     /// That is, instead of printing lines that match, rgrp will print lines that don't match.
     #[arg(short = 'v', long = "invert-match")]
     invert_match: bool,
+
+    /// Set the number of threads to use.
+    /// A value of 0 (which is the default) causes rgrp to choose the thread count using heuristics.
+    #[arg(short = 'j', long = "threads", default_value_t = 0)]
+    max_threads: u8,
 }
 
 fn parse_options() -> Options {
@@ -54,6 +59,7 @@ fn parse_options() -> Options {
         files: path,
         ignore_case: cli.ignore_case,
         invert_matches: cli.invert_match,
+        max_threads: cli.max_threads,
     }
 }
 
@@ -73,7 +79,7 @@ fn main() -> ExitCode {
     };
 
     let result = if no_terminal {
-        run(&options, || MonochromePrinter {}, on_error)
+        run(&options, MonochromePrinter::new, on_error)
     } else {
         run(&options, ColorPrinter::new, on_error)
     };
