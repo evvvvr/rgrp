@@ -17,3 +17,5 @@ pub mod run;
 /// Walks a single path - searching a file line by line, or queuing a
 /// directory's entries for later - against a set of patterns.
 pub mod search;
+
+pub mod line_reader;

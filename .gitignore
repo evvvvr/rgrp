@@ -3,3 +3,6 @@
 .vscode/
 out
 .DS_Store
+profile.json.gz
+*.sublime-project
+*.sublime-workspace

@@ -2,6 +2,7 @@ use clap::{CommandFactory, Parser};
 
 use std::env;
 use std::io::IsTerminal;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use rgrp::printer::{ColorPrinter, MonochromePrinter};
@@ -34,12 +35,22 @@ struct Cli {
     /// A value of 0 (which is the default) causes rgrp to choose the thread count using heuristics.
     #[arg(short = 'j', long = "threads", default_value_t = 0)]
     max_threads: u8,
+
+    /// Search binary files as if they were text (by default, a file that
+    /// looks binary is skipped).
+    #[arg(short = 'a', long = "text")]
+    text: bool,
+
+    /// Treat CRLF ("\r\n") as the line terminator instead of just "\n"
+    /// (by default, a trailing "\r" is kept as part of the line).
+    #[arg(long = "crlf")]
+    crlf: bool,
 }
 
 fn parse_options() -> Options {
     let cli = Cli::parse();
 
-    let (patterns, path) = if cli.regexp.is_empty() {
+    let (patterns, paths) = if cli.regexp.is_empty() {
         let mut args = cli.args.into_iter();
         let Some(pattern) = args.next() else {
             Cli::command()
@@ -49,17 +60,19 @@ fn parse_options() -> Options {
                 )
                 .exit();
         };
-        (vec![pattern], args.collect())
+        (vec![pattern], args.collect::<Vec<String>>())
     } else {
         (cli.regexp, cli.args)
     };
 
     Options {
         regexps: patterns,
-        files: path,
+        files: paths.into_iter().map(PathBuf::from).collect(),
         ignore_case: cli.ignore_case,
         invert_matches: cli.invert_match,
         max_threads: cli.max_threads,
+        search_binary: cli.text,
+        crlf: cli.crlf,
     }
 }
 
@@ -68,13 +81,16 @@ fn main() -> ExitCode {
 
     let no_terminal = !std::io::stdout().is_terminal() || env::var("NO_COLOR").is_ok();
 
-    let on_error = |e: search::Error, path: &str| match e {
-        search::Error::Io(err) => {
-            eprintln!("{PROGRAM_NAME}:{path} IO error for operation on path {path}: {err}")
-        }
-        search::Error::Pattern(err) => eprintln!("{PROGRAM_NAME}: pattern error: {err}"),
-        search::Error::NonUtf8Path => {
-            eprintln!("{PROGRAM_NAME}: skipping non-UTF8 path: {path}")
+    let on_error = |e: search::Error, path: &Path| {
+        let path = path.display();
+        match e {
+            search::Error::Io(err) => {
+                eprintln!("{PROGRAM_NAME}:{path} IO error for operation on path {path}: {err}")
+            }
+            search::Error::Pattern(err) => eprintln!("{PROGRAM_NAME}: pattern error: {err}"),
+            search::Error::LineRead(err) => {
+                eprintln!("{PROGRAM_NAME}:{path} error reading lines: {err}")
+            }
         }
     };
 

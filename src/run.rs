@@ -1,4 +1,5 @@
-use regex::RegexBuilder;
+use regex::bytes::RegexBuilder;
+use std::path::{Path, PathBuf};
 
 use crate::{
     concurrency::{SearchFailed, SpawnOptions, spawn_workers},
@@ -27,17 +28,25 @@ impl From<SearchFailed> for Error {
 }
 
 /// Everything a run needs that isn't a closure.
+#[derive(Default)]
 pub struct Options {
     /// Patterns to search for, as raw regex strings (compiled by `run`).
     pub regexps: Vec<String>,
     /// Starting paths given on the command line.
-    pub files: Vec<String>,
+    pub files: Vec<PathBuf>,
     /// Match patterns without regard to letter case.
     pub ignore_case: bool,
     /// Report lines that *don't* match instead of lines that do.
     pub invert_matches: bool,
     /// How many worker threads to use; `0` picks a number automatically.
     pub max_threads: u8,
+    /// When true, a file that looks binary is searched as text instead of
+    /// being skipped. Mirrors ripgrep's `-a`/`--text`.
+    pub search_binary: bool,
+    /// When true, a trailing `\r` before the `\n` is treated as part of the
+    /// line terminator and stripped, rather than as part of the line
+    /// content. Mirrors ripgrep's `--crlf`.
+    pub crlf: bool,
 }
 
 /// Runs a whole search end to end: compiles the patterns, starts the
@@ -49,7 +58,7 @@ pub struct Options {
 pub fn run<P: Printer + BufferedOutput>(
     options: &Options,
     make_printer: impl FnMut() -> P + Send + Clone + 'static,
-    on_error: impl FnMut(search::Error, &str),
+    on_error: impl FnMut(search::Error, &Path),
 ) -> Result<(), Error> {
     // Compile search patterns and fail fast if one of them is invalid
     let patterns = options
@@ -64,6 +73,8 @@ pub fn run<P: Printer + BufferedOutput>(
 
     let search_options = search::Options {
         invert_matches: options.invert_matches,
+        search_binary: options.search_binary,
+        crlf: options.crlf,
     };
 
     let handle = spawn_workers(

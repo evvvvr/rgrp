@@ -1,9 +1,10 @@
 mod common;
 
 use std::fs;
+use std::path::Path;
 
 use common::SharedRecorder;
-use regex::Regex;
+use regex::bytes::Regex;
 use rgrp::concurrency::SharedWorkState;
 use rgrp::search::{self, search};
 use tempfile::tempdir;
@@ -13,22 +14,14 @@ use tempfile::tempdir;
 // worry about) is what actually walks the whole tree.
 fn walk(
     patterns: &[Regex],
-    root: &str,
+    root: &Path,
     options: &search::Options,
     mut make_printer: impl FnMut() -> common::RecordingPrinter,
-    mut on_error: impl FnMut(search::Error, &str),
 ) -> Result<(), search::Error> {
-    let shared_state = SharedWorkState::new(&vec![root.to_string()]);
+    let shared_state = SharedWorkState::new(&[root.to_path_buf()]);
     while let Some(path) = shared_state.work_queue.pop() {
         let mut printer = make_printer();
-        search(
-            patterns,
-            &path,
-            options,
-            &mut printer,
-            &mut on_error,
-            &shared_state,
-        )?;
+        search(patterns, &path, options, &mut printer, &shared_state)?;
     }
     Ok(())
 }
@@ -44,12 +37,12 @@ fn finds_matches_in_every_file_of_a_flat_directory() {
     let re = Regex::new("hello").unwrap();
     walk(
         &[re],
-        dir.path().to_str().unwrap(),
+        dir.path(),
         &search::Options {
             invert_matches: false,
+            ..Default::default()
         },
         &mut || recorder.printer(),
-        &mut |_: search::Error, _: &str| {},
     )
     .unwrap();
 
@@ -70,12 +63,12 @@ fn recurses_into_nested_subdirectories() {
     let re = Regex::new("needle").unwrap();
     walk(
         &[re],
-        dir.path().to_str().unwrap(),
+        dir.path(),
         &search::Options {
             invert_matches: false,
+            ..Default::default()
         },
         &mut || recorder.printer(),
-        &mut |_: search::Error, _: &str| {},
     )
     .unwrap();
 
@@ -90,12 +83,12 @@ fn empty_directory_produces_no_matches_and_no_error() {
     let re = Regex::new("anything").unwrap();
     walk(
         &[re],
-        dir.path().to_str().unwrap(),
+        dir.path(),
         &search::Options {
             invert_matches: false,
+            ..Default::default()
         },
         &mut || recorder.printer(),
-        &mut |_: search::Error, _: &str| {},
     )
     .unwrap();
 
@@ -113,12 +106,12 @@ fn single_file_path_is_searched_directly() {
     let re = Regex::new("needle").unwrap();
     walk(
         &[re],
-        file.to_str().unwrap(),
+        &file,
         &search::Options {
             invert_matches: false,
+            ..Default::default()
         },
         &mut || recorder.printer(),
-        &mut |_: search::Error, _: &str| {},
     )
     .unwrap();
 
@@ -134,12 +127,12 @@ fn nonexistent_path_returns_io_error() {
     let re = Regex::new("x").unwrap();
     let result = walk(
         &[re],
-        missing.to_str().unwrap(),
+        &missing,
         &search::Options {
             invert_matches: false,
+            ..Default::default()
         },
         &mut || recorder.printer(),
-        &mut |_: search::Error, _: &str| {},
     );
 
     assert!(matches!(result, Err(search::Error::Io(_))));
@@ -158,12 +151,12 @@ fn symlinks_are_skipped_rather_than_followed() {
     let re = Regex::new("needle").unwrap();
     walk(
         &[re],
-        dir.path().to_str().unwrap(),
+        dir.path(),
         &search::Options {
             invert_matches: false,
+            ..Default::default()
         },
         &mut || recorder.printer(),
-        &mut |_: search::Error, _: &str| {},
     )
     .unwrap();
 
@@ -175,29 +168,30 @@ fn symlinks_are_skipped_rather_than_followed() {
 // only be exercised on filesystems that actually allow arbitrary bytes.
 #[cfg(target_os = "linux")]
 #[test]
-fn non_utf8_path_is_skipped_without_aborting_the_walk() {
+fn non_utf8_path_is_searched_like_any_other_file() {
     use std::os::unix::ffi::OsStrExt;
-    use std::path::Path;
 
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("good.txt"), "a needle here\n").unwrap();
 
     let bad_name = std::ffi::OsStr::from_bytes(&[0x66, 0x6f, 0x80, 0x6f]); // "fo\x80o"
-    fs::write(Path::new(dir.path()).join(bad_name), "needle too\n").unwrap();
+    fs::write(dir.path().join(bad_name), "needle too\n").unwrap();
 
     let recorder = SharedRecorder::new();
     let re = Regex::new("needle").unwrap();
     walk(
         &[re],
-        dir.path().to_str().unwrap(),
+        dir.path(),
         &search::Options {
             invert_matches: false,
+            ..Default::default()
         },
         &mut || recorder.printer(),
-        &mut |_: search::Error, _: &str| {},
     )
     .unwrap();
 
-    // The non-UTF8 entry is skipped; the walk still finds the valid file.
-    assert_eq!(recorder.matches().len(), 1);
+    // `Path`/`PathBuf` carry a non-UTF8 filename just fine, so both files
+    // are found and searched - only display formatting is lossy, not the
+    // walk itself.
+    assert_eq!(recorder.matches().len(), 2);
 }
