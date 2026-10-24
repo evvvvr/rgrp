@@ -1,0 +1,781 @@
+{
+	"auto_complete":
+	{
+		"selected_items":
+		[
+			[
+				"Mutex",
+				"Mutex"
+			]
+		]
+	},
+	"buffers":
+	[
+		{
+			"contents": "                                                                                                  \nrgrp  bytes-search [!1?3] ❯ ls                                                                    \n input    tests       󰡯 out               rgrp.sublime-project\n󰣞 src      Cargo.lock   profile.json.gz   rgrp.sublime-workspace\n target   Cargo.toml  󰂺 README.md\n                                                                                                  \nrgrp  bytes-search [!1?3] ❯ car Cargo.toml                                                        \nzsh: command not found: car\n                                                                                                  \nrgrp  bytes-search [!1?3] ❯ cat Cargo.toml                                                        \n─────┬────────────────────────────────────────────────────────────────────────────────────────────\n     │ File: Cargo.toml\n─────┼────────────────────────────────────────────────────────────────────────────────────────────\n   1 │ [package]\n   2 │ name = \"rgrp\"\n   3 │ version = \"0.1.0\"\n   4 │ edition = \"2024\"\n   5 │ \n   6 │ [dependencies]\n   7 │ clap = { version = \"4.6.7\", features = [\"derive\"] }\n   8 │ crossbeam = \"0.8.5\"\n   9 │ owo-colors = \"4.4.0\"\n  10 │ regex = \"1.13.1\"\n  11 │ \n  12 │ [dev-dependencies]\n  13 │ tempfile = \"3.23.0\"\n─────┴────────────────────────────────────────────────────────────────────────────────────────────\n                                                                                                  \nrgrp  bytes-search [!1?3] ❯ ",
+			"settings":
+			{
+				"buffer_size": 1556,
+				"line_ending": "Unix",
+				"name": "Login Shell",
+				"scratch": true
+			}
+		},
+		{
+			"file": "src/line_reader.rs",
+			"file_size": 4649,
+			"file_write_time": 134372644805086894,
+			"settings":
+			{
+				"buffer_size": 4649,
+				"line_ending": "Unix"
+			},
+			"undo_stack":
+			[
+			]
+		}
+	],
+	"build_system": "",
+	"build_system_choices":
+	[
+	],
+	"build_varint": "",
+	"command_palette":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+			[
+				"ter",
+				"Terminus: Open Default Shell in Tab (View)"
+			],
+			[
+				"de",
+				"Debugger: Open"
+			],
+			[
+				"proje",
+				"Project Manager"
+			],
+			[
+				"package in",
+				"Package Control: Install Package"
+			],
+			[
+				"pain",
+				"Package Control: Install Package"
+			],
+			[
+				"rename",
+				"Terminus: Rename Title"
+			],
+			[
+				"termi ope",
+				"Terminus: Open Default Shell in Panel"
+			],
+			[
+				"list pac",
+				"Package Control: List Packages"
+			],
+			[
+				"ins",
+				"Package Control: Install Package"
+			],
+			[
+				"packa in",
+				"Package Control: Install Package"
+			],
+			[
+				"sat",
+				"Package Control: Satisfy Packages"
+			],
+			[
+				"sati",
+				"Package Control: Satisfy Packages"
+			],
+			[
+				"satis",
+				"Package Control: Satisfy Packages"
+			],
+			[
+				"package",
+				"Package Control: Satisfy Packages"
+			],
+			[
+				"LSP: e",
+				"LSP: Enable Language Server Globally"
+			],
+			[
+				"pac",
+				"Package Control: Satisfy Packages"
+			],
+			[
+				"inst",
+				"Package Control: Install Package"
+			]
+		],
+		"width": 0.0
+	},
+	"console":
+	{
+		"height": 0.0,
+		"history":
+		[
+		]
+	},
+	"distraction_free":
+	{
+		"menu_visible": true,
+		"show_minimap": false,
+		"show_open_files": false,
+		"show_tabs": false,
+		"side_bar_visible": false,
+		"status_bar_visible": false
+	},
+	"expanded_folders":
+	[
+		"/Users/voga/projects/rgrp",
+		"/Users/voga/projects/rgrp/src"
+	],
+	"file_history":
+	[
+		"/Users/voga/projects/rgrp/src/line_reader.rs",
+		"/Users/voga/camapi/README.md",
+		"/Users/voga/projects/rgrp/src/search.rs",
+		"/Users/voga/projects/rgrp/src/concurrency.rs",
+		"/Users/voga/projects/rgrp/.git/MERGE_MSG",
+		"/Users/voga/projects/rgrp/.git/COMMIT_EDITMSG",
+		"/Users/voga/.config/starship.toml",
+		"/Users/voga/.zshrc",
+		"/Users/voga/Library/Application Support/prefs",
+		"/Users/voga/Desktop/Hausaufgaben/2026/06/prefs",
+		"/Users/voga/Library/Application",
+		"/Users/voga/camapi/.git/rebase-merge/git-rebase-todo",
+		"/Users/voga/camapi/.git/COMMIT_EDITMSG",
+		"/Users/voga/Desktop/Hausaufgaben/2026/06/22.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2026/06/18.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2026/06/15.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2026/06/12.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2026/06/08.txt",
+		"/Users/voga/projects/imago/INTERVIEW_PREP.md",
+		"/Users/voga/Desktop/Hausaufgaben/2026/05/29.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2026/05/27.txt",
+		"/Users/voga/Desktop/IMAGO.md",
+		"/Users/voga/Desktop/Hausaufgaben/2026/05/25.txt",
+		"/Users/voga/Desktop/untitled",
+		"/Users/voga/projects/imago/.git/COMMIT_EDITMSG",
+		"/Users/voga/Desktop/Hausaufgaben/2026/05/21.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2026/05/17.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2026/05/10.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2026/05/08.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2026/05/04.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2026/04/30.txt/30.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2026/04/19.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2026/04/15.txt",
+		"/Users/voga/Desktop/phase-1",
+		"/Users/voga/projects/themvp-3/.git/COMMIT_EDITMSG",
+		"/Users/voga/Desktop/agent_docs/CLAUDE.md",
+		"/Users/voga/Desktop/agent_docs/project-structure.md",
+		"/Users/voga/Desktop/agent_docs/tech-stack.md",
+		"/Users/voga/Desktop/agent_docs/user-flows.md",
+		"/Users/voga/Desktop/agent_docs/user-roles.md",
+		"/Users/voga/Desktop/agent_docs/product-overview.md",
+		"/Users/voga/Desktop/input/user-flows.md",
+		"/Users/voga/Desktop/data model.md",
+		"/Users/voga/Desktop/CLAUDE.md",
+		"/Users/voga/Desktop/tech stack.md",
+		"/Users/voga/Desktop/project_structure.md",
+		"/Users/voga/Desktop/product overview.md",
+		"/Users/voga/Desktop/user flows.md",
+		"/Users/voga/Desktop/Hausaufgaben/2026/04/02.txt",
+		"/Users/voga/dotfiles/zsh/.zshrc",
+		"/Users/voga/Desktop/Hausaufgaben/2026/03/28.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2026/03/08.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2026/03/01.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2026/02/21.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2026/02/15.txt",
+		"/Users/voga/Desktop/Thanks for raising the DML risks—absolutely agree",
+		"/Users/voga/Desktop/wf2",
+		"/Users/voga/Desktop/wf",
+		"/Users/voga/Desktop/Hausaufgaben/2026/02/07 aufsatz.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2026/02/08.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2026/01/02/07.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2026/01/02/01.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2026/01/24-esse.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2026/01/24.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2026/01/21.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2026/01/17.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2026/01/15.txt",
+		"/Users/voga/Downloads/RFC-GOLDEN-PATH-TEMPLATES.md",
+		"/Users/voga/Desktop/Hausaufgaben/20.12.2025/1.txt",
+		"/Users/voga/Desktop/Hausaufgaben/6.12.2025/20.12.2025/1.txt",
+		"/Users/voga/Desktop/Hausaufgaben/6.12.2025/1.txt",
+		"/Users/voga/Desktop/Hausaufgaben/25.11.2025/1.txt",
+		"/Users/voga/Desktop/Hausaufgaben/30.10.2025/15.11.2025/2.txt",
+		"/Users/voga/Desktop/Hausaufgaben/30.10.2025/15.11.2025/1.txt",
+		"/Users/voga/Desktop/Hausaufgaben/30.10.2025/2.11.2025/1.txt",
+		"/Users/voga/Desktop/Hausaufgaben/30.10.2025/1.txt",
+		"/Users/voga/Desktop/Hausaufgaben/30.10.2025/untitled",
+		"/Users/voga/Desktop/Hausaufgaben/18.10.2025/1.txt",
+		"/Users/voga/Desktop/Hausaufgaben/14.10.2025/15.10.2025/1.txt",
+		"/Users/voga/Desktop/Hausaufgaben/14.10.2025/1.txt",
+		"/Users/voga/Desktop/Hausaufgaben/14.10.2025/untitled",
+		"/Users/voga/Desktop/Hausaufgaben/8.10.2025/1.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2.10.2025/1.txt",
+		"/Users/voga/projects/themvp/.git/COMMIT_EDITMSG",
+		"/Users/voga/projects/themvp/.git/rebase-merge/git-rebase-todo",
+		"/Users/voga/Desktop/Hausaufgaben/20.09.2025/1.txt",
+		"/Users/voga/Desktop/MVP",
+		"/Users/voga/Desktop/Hausaufgaben/17.09.2025/1.txt",
+		"/Users/voga/Desktop/Hausaufgaben/13.09.2025/1.txt",
+		"/Users/voga/Desktop/Hausaufgaben/8.09.025/1.txt",
+		"/Users/voga/Desktop/Hausaufgaben/9.08.2025/31.08.2025/1.txt",
+		"/Users/voga/Desktop/Hausaufgaben/9.08.2025/1.txt",
+		"/Users/voga/Desktop/EMIL/decision log.md",
+		"/Users/voga/Desktop/EMIL/demo script",
+		"/Users/voga/Desktop/EMIL/widget desginer",
+		"/Users/voga/Desktop/EMIL/overview",
+		"/Users/voga/projects/emil_claims/.git/COMMIT_EDITMSG",
+		"/Users/voga/Desktop/EMIL/To improve",
+		"/Users/voga/Desktop/EMIL/untitled",
+		"/Users/voga/Desktop/EMIL/notes",
+		"/Users/voga/Desktop/EMIL",
+		"/var/folders/5t/btl5f15s64g9g53dm_c352080000gn/T/TemporaryItems/NSIRD_screencaptureui_0fHuQc/Screenshot 2025-08-15 at 11.17.37.png",
+		"/Users/voga/Desktop/Hausaufgaben/7.08.2025/1.txt",
+		"/Users/voga/Desktop/Hausaufgaben/1.08.2025/1.txt",
+		"/Users/voga/Desktop/get_prices flow",
+		"/Users/voga/Desktop/Hausaufgaben/23.07.2025/1.txt",
+		"/Users/voga/Desktop/seqeunce",
+		"/Users/voga/Desktop/Data models",
+		"/Users/voga/Desktop/Demoup",
+		"/Users/voga/Desktop/Hausaufgaben/19.07.2025/2.txt",
+		"/Users/voga/Desktop/Hausaufgaben/19.07.2025/1.txt",
+		"/Users/voga/Desktop/Hausaufgaben/16.07.2025/1.txt",
+		"/Users/voga/Desktop/Hausaufgaben/09.07.2025/1.txt",
+		"/Users/voga/Desktop/Hausaufgaben/5.07.2025/1.txt",
+		"/Users/voga/Desktop/Hausaufgaben/2.07.2025/1.txt",
+		"/Users/voga/Desktop/Hausaufgaben/28.06.2025/1.txt",
+		"/Users/voga/Desktop/Hausaufgaben/25.06.2025/1.txt",
+		"/Users/voga/projects/creature-evolution-1-gzhgtx/.git/COMMIT_EDITMSG",
+		"/Users/voga/Desktop/Practical Impact",
+		"/Users/voga/Desktop/I want you to do the following",
+		"/Users/voga/Desktop/Hausaufgaben/18.06.2025/18.06.2025 1.txt",
+		"/Users/voga/Desktop/Hausaufgaben/15.06.2025 3.txt",
+		"/Users/voga/Desktop/Hausaufgaben/15.06.2025 2.txt",
+		"/Users/voga/Desktop/Hausaufgaben/15.06.2025",
+		"/Users/voga/Desktop/invitation adm,in",
+		"/Users/voga/dotfiles/sublime-text/Preferences.sublime-settings",
+		"/Users/voga/Library/Application Support/Sublime Text/Packages/Default/Preferences.sublime-settings",
+		"/Users/voga/Library/Application Support/Sublime Text/Packages/User/Preferences.sublime-settings"
+	],
+	"find":
+	{
+		"height": 41.0
+	},
+	"find_in_files":
+	{
+		"height": 122.0,
+		"where_history":
+		[
+		]
+	},
+	"find_state":
+	{
+		"case_sensitive": false,
+		"find_history":
+		[
+		],
+		"highlight": true,
+		"in_selection": false,
+		"preserve_case": false,
+		"regex": false,
+		"replace_history":
+		[
+		],
+		"reverse": false,
+		"scrollbar_highlights": true,
+		"show_context": true,
+		"use_buffer2": true,
+		"use_gitignore": true,
+		"whole_word": false,
+		"wrap": true
+	},
+	"groups":
+	[
+		{
+			"sheets":
+			[
+				{
+					"buffer": 0,
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 1556,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								1556,
+								1556
+							]
+						],
+						"settings":
+						{
+							"__vi_external_disable": true,
+							"auto_complete": false,
+							"auto_complete_commit_on_tab": false,
+							"bracket_highlighter.busy": false,
+							"bracket_highlighter.clone_locations":
+							{
+							},
+							"bracket_highlighter.ignore": true,
+							"bracket_highlighter.locations":
+							{
+								"close":
+								{
+								},
+								"icon":
+								{
+								},
+								"open":
+								{
+								},
+								"unmatched":
+								{
+								}
+							},
+							"bracket_highlighter.regions":
+							[
+								"bh_angle",
+								"bh_angle_center",
+								"bh_angle_open",
+								"bh_angle_close",
+								"bh_angle_content",
+								"bh_c_define",
+								"bh_c_define_center",
+								"bh_c_define_open",
+								"bh_c_define_close",
+								"bh_c_define_content",
+								"bh_curly",
+								"bh_curly_center",
+								"bh_curly_open",
+								"bh_curly_close",
+								"bh_curly_content",
+								"bh_default",
+								"bh_default_center",
+								"bh_default_open",
+								"bh_default_close",
+								"bh_default_content",
+								"bh_double_quote",
+								"bh_double_quote_center",
+								"bh_double_quote_open",
+								"bh_double_quote_close",
+								"bh_double_quote_content",
+								"bh_regex",
+								"bh_regex_center",
+								"bh_regex_open",
+								"bh_regex_close",
+								"bh_regex_content",
+								"bh_round",
+								"bh_round_center",
+								"bh_round_open",
+								"bh_round_close",
+								"bh_round_content",
+								"bh_single_quote",
+								"bh_single_quote_center",
+								"bh_single_quote_open",
+								"bh_single_quote_close",
+								"bh_single_quote_content",
+								"bh_square",
+								"bh_square_center",
+								"bh_square_open",
+								"bh_square_close",
+								"bh_square_content",
+								"bh_tag",
+								"bh_tag_center",
+								"bh_tag_open",
+								"bh_tag_close",
+								"bh_tag_content",
+								"bh_unmatched",
+								"bh_unmatched_center",
+								"bh_unmatched_open",
+								"bh_unmatched_close",
+								"bh_unmatched_content"
+							],
+							"color_helper.refresh": true,
+							"color_scheme": "Terminus.hidden-color-scheme",
+							"default_dir": "/Users/voga/projects/rgrp",
+							"draw_centered": false,
+							"draw_indent_guides": false,
+							"draw_unicode_white_space": false,
+							"draw_white_space": "none",
+							"git_gutter_is_enabled": false,
+							"gutter": false,
+							"highlight_line": false,
+							"is_widget": true,
+							"lsp_uri": "buffer:42",
+							"result_base_dir": "/Users/voga/projects/rgrp",
+							"result_file_regex": null,
+							"result_line_regex": null,
+							"rulers":
+							[
+								500
+							],
+							"scroll_past_end": true,
+							"syntax": "Terminus View.sublime-syntax",
+							"terminus.highlight_counter": 215,
+							"terminus_view": true,
+							"terminus_view.args":
+							{
+								"auto_close": true,
+								"cancellable": false,
+								"cmd":
+								[
+									"/bin/zsh",
+									"-i",
+									"-l"
+								],
+								"cwd": "/Users/voga/projects/rgrp",
+								"default_title": "Login Shell",
+								"env":
+								{
+									"LANG": "C.UTF-8",
+									"PROMPT_TOOLKIT_COLOR_DEPTH": "DEPTH_8_BIT",
+									"TERM": "xterm-256color",
+									"TERMINUS_SUBLIME": "1",
+									"TERM_PROGRAM": "Terminus-Sublime"
+								},
+								"file_regex": null,
+								"line_regex": null,
+								"panel_name": "Terminus",
+								"reactivable": true,
+								"show_in_panel": null,
+								"tag": null,
+								"timeit": false,
+								"title": null,
+								"view_settings":
+								{
+								}
+							},
+							"terminus_view.cancellable": false,
+							"terminus_view.key.ctrl+k": true,
+							"terminus_view.key.ctrl+p": true,
+							"terminus_view.natural_keyboard": true,
+							"terminus_view.reactivable": true,
+							"terminus_view.tag": null,
+							"terminus_view.viewport_y": 98.0,
+							"word_wrap": false
+						},
+						"translation.x": 0.0,
+						"translation.y": 0.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 1,
+					"stack_multiselect": false,
+					"type": "text"
+				},
+				{
+					"buffer": 1,
+					"file": "src/line_reader.rs",
+					"selected": true,
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 4649,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								3548,
+								3548
+							]
+						],
+						"settings":
+						{
+							"auto_complete_triggers":
+							[
+								{
+									"characters": "<",
+									"selector": "text.html, text.xml"
+								},
+								{
+									"rhs_empty": true,
+									"selector": "punctuation.accessor"
+								},
+								{
+									"characters": ":.'(",
+									"selector": "meta.tag, source - comment - string.quoted.double.block - string.quoted.single.block - string.unquoted.heredoc",
+									"server": "LSP-rust-analyzer"
+								}
+							],
+							"bracket_highlighter.busy": false,
+							"bracket_highlighter.locations":
+							{
+								"close":
+								{
+									"1":
+									[
+										3971,
+										3972
+									]
+								},
+								"icon":
+								{
+									"1":
+									[
+										"Packages/BracketHighlighter/icons/curly_bracket.png",
+										"region.purplish"
+									]
+								},
+								"open":
+								{
+									"1":
+									[
+										3132,
+										3133
+									]
+								},
+								"unmatched":
+								{
+								}
+							},
+							"bracket_highlighter.regions":
+							[
+								"bh_angle",
+								"bh_angle_center",
+								"bh_angle_open",
+								"bh_angle_close",
+								"bh_angle_content",
+								"bh_c_define",
+								"bh_c_define_center",
+								"bh_c_define_open",
+								"bh_c_define_close",
+								"bh_c_define_content",
+								"bh_curly",
+								"bh_curly_center",
+								"bh_curly_open",
+								"bh_curly_close",
+								"bh_curly_content",
+								"bh_default",
+								"bh_default_center",
+								"bh_default_open",
+								"bh_default_close",
+								"bh_default_content",
+								"bh_double_quote",
+								"bh_double_quote_center",
+								"bh_double_quote_open",
+								"bh_double_quote_close",
+								"bh_double_quote_content",
+								"bh_regex",
+								"bh_regex_center",
+								"bh_regex_open",
+								"bh_regex_close",
+								"bh_regex_content",
+								"bh_round",
+								"bh_round_center",
+								"bh_round_open",
+								"bh_round_close",
+								"bh_round_content",
+								"bh_single_quote",
+								"bh_single_quote_center",
+								"bh_single_quote_open",
+								"bh_single_quote_close",
+								"bh_single_quote_content",
+								"bh_square",
+								"bh_square_center",
+								"bh_square_open",
+								"bh_square_close",
+								"bh_square_content",
+								"bh_tag",
+								"bh_tag_center",
+								"bh_tag_open",
+								"bh_tag_close",
+								"bh_tag_content",
+								"bh_unmatched",
+								"bh_unmatched_center",
+								"bh_unmatched_open",
+								"bh_unmatched_close",
+								"bh_unmatched_content"
+							],
+							"color_helper.refresh": true,
+							"color_helper.scan":
+							{
+								"allow_scanning": false,
+								"color_class":
+								[
+									{
+										"class": "css-level-4",
+										"scopes": ""
+									}
+								],
+								"color_trigger": "(?xi)\n(?:\n    \\b(?<![-#&$])(?:\n        color\\((?!\\s*-)|(?:hsla?|(?:ok)?(?:lch|lab)|hwb|rgba?)\\(\n) |\n\\b(?<![-#&$])[\\w]{3,}(?![(-])\\b|(?<![&])\\#)\n",
+								"current_ext": ".rs",
+								"current_syntax": "Rust/Rust",
+								"enabled": true,
+								"last_updated": 1792791739.23,
+								"scanning": "-comment"
+							},
+							"git_gutter_is_enabled": true,
+							"lsp_active": true,
+							"lsp_uri": "file:///Users/voga/projects/rgrp/src/line_reader.rs",
+							"show_definitions": false,
+							"syntax": "Packages/Rust/Rust.sublime-syntax",
+							"tab_size": 4,
+							"translate_tabs_to_spaces": true
+						},
+						"translation.x": 0.0,
+						"translation.y": 2766.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 0,
+					"stack_multiselect": false,
+					"type": "text"
+				}
+			]
+		}
+	],
+	"incremental_find":
+	{
+		"height": 41.0
+	},
+	"input":
+	{
+		"height": 0.0
+	},
+	"layout":
+	{
+		"cells":
+		[
+			[
+				0,
+				0,
+				1,
+				1
+			]
+		],
+		"cols":
+		[
+			0.0,
+			1.0
+		],
+		"rows":
+		[
+			0.0,
+			1.0
+		]
+	},
+	"menu_visible": true,
+	"output.Debugger":
+	{
+		"height": 500.0,
+		"history":
+		[
+		]
+	},
+	"output.Debugger Callstack":
+	{
+		"height": 779.0,
+		"history":
+		[
+		]
+	},
+	"output.LSP Log Panel":
+	{
+		"height": 0.0,
+		"history":
+		[
+		]
+	},
+	"output.SublimeLinter":
+	{
+		"height": 0.0,
+		"history":
+		[
+		]
+	},
+	"output.Terminus":
+	{
+		"height": 214.0,
+		"history":
+		[
+		]
+	},
+	"output.diagnostics":
+	{
+		"height": 0.0,
+		"history":
+		[
+		]
+	},
+	"output.find_results":
+	{
+		"height": 0.0,
+		"history":
+		[
+		]
+	},
+	"output.mdpopups":
+	{
+		"height": 0.0,
+		"history":
+		[
+		]
+	},
+	"pinned_build_system": "",
+	"project": "rgrp.sublime-project",
+	"replace":
+	{
+		"height": 78.0
+	},
+	"save_all_on_build": true,
+	"select_file":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+			[
+				"line",
+				"src/line_reader.rs"
+			]
+		],
+		"width": 0.0
+	},
+	"select_project":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"select_symbol":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"selected_group": 0,
+	"settings":
+	{
+		"lsp_show_inlay_hints": false
+	},
+	"show_minimap": false,
+	"show_open_files": false,
+	"show_tabs": true,
+	"side_bar_visible": true,
+	"side_bar_width": 233.0,
+	"status_bar_visible": true,
+	"template_settings":
+	{
+	}
+}

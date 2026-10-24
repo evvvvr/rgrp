@@ -127,6 +127,12 @@ fn search_reader<T: Printer>(
     let mut line_number = 1;
 
     loop {
+        // Binary search
+        // take 64kb bytes chunk from file
+        // if we ignore binaries and theres any NULL byte in chunk - signal that it was binary and skip file
+        // othwrsise, appned to line buffer
+        // once newline or eof encountered - search line versis regexp bytes
+        // semd vec<u8> line to prinetr and use decode_lossy to form results
         let res = reader.read_line(&mut buf);
 
         match res {
