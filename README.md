@@ -66,3 +66,7 @@ first place - it reads raw bytes split on `\n` and matches with a
 byte-oriented regex engine, lossily decoding only when it needs to print.
 Beyond those 35 files, the two tools agree almost exactly on which lines
 match, out of ~29,600 files searched in common.
+
+## License
+
+MIT - see [LICENSE](LICENSE).
