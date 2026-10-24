@@ -4,7 +4,6 @@ Yet another `grep` rewrite in Rust.
 Just a hobby 100% artisanal hand-coded learning project.
 
 ## To Do:
-- use byte regex, do not stop searching file on invalid chunk, stop searching on encountering null byte (on by deault, use cli flag to continue search after seeing a null byte)
 - file read optimization with mmap
 - searching inside tars/compressed files
 - ignoring/specifying search paths/file patterns 
