@@ -1,4 +1,4 @@
-use crate::line_reader::{ReadResult, read_lines};
+use crate::line_reader::{ReadOptions, ReadResult, read_lines};
 use regex::bytes::Regex;
 use std::fs;
 use std::io::prelude::*;
@@ -57,7 +57,7 @@ pub enum Outcome {
 
 /// Knobs that change how a search behaves, independent of the pattern(s)
 /// used or which path is being searched.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct Options {
     /// When true, report lines that *don't* match any pattern instead of
     /// lines that do.
@@ -65,6 +65,10 @@ pub struct Options {
     /// When true, a file that looks binary is searched as text instead of
     /// being skipped. Mirrors ripgrep's `-a`/`--text`.
     pub search_binary: bool,
+    /// When true, a trailing `\r` before the `\n` is treated as part of the
+    /// line terminator and stripped, rather than as part of the line
+    /// content. Mirrors ripgrep's `--crlf`.
+    pub crlf: bool,
 }
 
 /// Somewhere a directory's entries can be handed off for someone else to
@@ -136,9 +140,6 @@ fn search_reader<T: Printer>(
     let mut line_number: u64 = 1;
 
     let mut on_read_line = |line: &[u8]| {
-        // CR LF case
-        let line = line.strip_suffix(b"\r").unwrap_or(line);
-
         let mut all_matches: Vec<regex::bytes::Match> = Vec::new();
 
         for pattern in patterns {
@@ -154,14 +155,21 @@ fn search_reader<T: Printer>(
             }
         } else if !all_matches.is_empty() {
             // This allows to walk over all matches for all patterns sequentially
-            all_matches.sort_by(|a, b| a.start().cmp(&b.start()));
+            all_matches.sort_by_key(|a| a.start());
 
             printer.print(file_path, line_number, line, &all_matches);
         }
 
         line_number += 1;
     };
-    let res = read_lines(&mut reader, !options.search_binary, &mut on_read_line);
+    let res = read_lines(
+        &mut reader,
+        ReadOptions {
+            skip_on_null: !options.search_binary,
+            crlf: options.crlf,
+        },
+        &mut on_read_line,
+    );
 
     match res {
         Ok(ReadResult::FileRead) => {
@@ -245,7 +253,7 @@ mod tests {
             input,
             &Options {
                 invert_matches: false,
-                search_binary: false,
+                ..Default::default()
             },
         )
     }
@@ -276,8 +284,24 @@ mod tests {
     }
 
     #[test]
-    fn trims_both_lf_and_crlf_line_endings() {
+    fn by_default_a_trailing_cr_is_kept_as_part_of_the_line() {
         let printer = run_reader("foo", "foo\r\nfoo\n");
+        assert_eq!(printer.matches.len(), 2);
+        assert_eq!(printer.matches[0].line, "foo\r");
+        assert_eq!(printer.matches[1].line, "foo");
+    }
+
+    #[test]
+    fn crlf_option_trims_the_trailing_cr_from_both_line_endings() {
+        let printer = run_reader_with_options(
+            &["foo"],
+            "foo\r\nfoo\n",
+            &Options {
+                invert_matches: false,
+                search_binary: false,
+                crlf: true,
+            },
+        );
         assert_eq!(printer.matches.len(), 2);
         assert_eq!(printer.matches[0].line, "foo");
         assert_eq!(printer.matches[1].line, "foo");
@@ -371,7 +395,7 @@ mod tests {
             "foo\nbar\nfoo bar\nbaz\n",
             &Options {
                 invert_matches: true,
-                search_binary: false,
+                ..Default::default()
             },
         );
 
@@ -385,7 +409,7 @@ mod tests {
             "foo\nbar\nfoo bar\nbaz\n",
             &Options {
                 invert_matches: true,
-                search_binary: false,
+                ..Default::default()
             },
         );
 
@@ -399,7 +423,7 @@ mod tests {
             "bar\n",
             &Options {
                 invert_matches: true,
-                search_binary: false,
+                ..Default::default()
             },
         );
 

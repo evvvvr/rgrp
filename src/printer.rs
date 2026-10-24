@@ -51,6 +51,12 @@ impl ColorPrinter {
     }
 }
 
+impl Default for ColorPrinter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Printer for ColorPrinter {
     fn print(
         &mut self,
@@ -150,6 +156,12 @@ impl MonochromePrinter {
         Self {
             output: String::new(),
         }
+    }
+}
+
+impl Default for MonochromePrinter {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

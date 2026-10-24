@@ -24,9 +24,21 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+/// Knobs that change how `read_lines` splits and reports lines, independent
+/// of where the bytes themselves come from.
+#[derive(Clone, Copy, Default)]
+pub struct ReadOptions {
+    /// When true, a chunk containing a null byte stops the read early with
+    /// [`ReadResult::BinaryFileSkipped`] instead of being split into lines.
+    pub skip_on_null: bool,
+    /// When true, a trailing `\r` right before a `\n` is treated as part of
+    /// the line terminator and stripped, rather than as part of the line.
+    pub crlf: bool,
+}
+
 pub fn read_lines(
     reader: &mut impl Read,
-    skip_on_null: bool,
+    options: ReadOptions,
     on_line_read: &mut impl FnMut(&[u8]),
 ) -> Result<ReadResult, Error> {
     let mut buffer = [0; BUFFER_SIZE_BYTES];
@@ -45,13 +57,16 @@ pub fn read_lines(
                 // Done reading. Whatever's left in `line` is the last line,
                 // if the file didn't end with a trailing '\n'.
                 if !line.is_empty() {
+                    if options.crlf && line.last() == Some(&b'\r') {
+                        line.pop();
+                    }
                     on_line_read(&line);
                 }
 
                 return Ok(ReadResult::FileRead);
             }
             Ok(bytes_read) => {
-                if skip_on_null && buffer[..bytes_read].contains(&0) {
+                if options.skip_on_null && buffer[..bytes_read].contains(&0) {
                     // Check the whole chunk for a null byte before handing
                     // any of its lines to `on_line_read` - otherwise a null
                     // byte later in the chunk would still let lines earlier
@@ -68,6 +83,13 @@ pub fn read_lines(
                         // everything since the last boundary, up to (not
                         // including) this newline, completes the line
                         line.extend_from_slice(&buffer[line_start..current_byte_index]);
+                        if options.crlf && line.last() == Some(&b'\r') {
+                            // `line` holds the whole assembled line by this
+                            // point regardless of how many reads it took to
+                            // get here, so this also covers a '\r' left
+                            // over from the end of a previous chunk.
+                            line.pop();
+                        }
                         on_line_read(&line);
                         line.clear();
                         line_start = current_byte_index + 1;
@@ -93,7 +115,14 @@ mod tests {
     fn can_read_lines_correctly() {
         let mut lines: Vec<Vec<u8>> = Vec::new();
         let mut input = Cursor::new(b"aa 11\n123 foo\n\nvoga");
-        let res = read_lines(&mut input, true, &mut |line| lines.push(line.to_vec()));
+        let res = read_lines(
+            &mut input,
+            ReadOptions {
+                skip_on_null: true,
+                crlf: false,
+            },
+            &mut |line| lines.push(line.to_vec()),
+        );
 
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), ReadResult::FileRead);
@@ -112,7 +141,14 @@ mod tests {
 
         let mut lines: Vec<Vec<u8>> = Vec::new();
         let mut input = Cursor::new(input_bytes);
-        let res = read_lines(&mut input, false, &mut |line| lines.push(line.to_vec()));
+        let res = read_lines(
+            &mut input,
+            ReadOptions {
+                skip_on_null: false,
+                crlf: false,
+            },
+            &mut |line| lines.push(line.to_vec()),
+        );
 
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), ReadResult::FileRead);
@@ -129,7 +165,14 @@ mod tests {
         // "this looks binary, don't search it" outcome
         let mut lines: Vec<Vec<u8>> = Vec::new();
         let mut input = Cursor::new(b"aa 11\x00 bc\nmore\n");
-        let res = read_lines(&mut input, true, &mut |line| lines.push(line.to_vec()));
+        let res = read_lines(
+            &mut input,
+            ReadOptions {
+                skip_on_null: true,
+                crlf: false,
+            },
+            &mut |line| lines.push(line.to_vec()),
+        );
 
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), ReadResult::BinaryFileSkipped);
@@ -141,7 +184,14 @@ mod tests {
         let mut lines: Vec<Vec<u8>> = Vec::new();
         let mut input = Cursor::new(b"");
 
-        let res = read_lines(&mut input, true, &mut |line| lines.push(line.to_vec()));
+        let res = read_lines(
+            &mut input,
+            ReadOptions {
+                skip_on_null: true,
+                crlf: false,
+            },
+            &mut |line| lines.push(line.to_vec()),
+        );
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), ReadResult::FileRead);
         assert!(lines.is_empty());
@@ -159,9 +209,14 @@ mod tests {
     fn stops_after_a_read_error_instead_of_looping_forever() {
         let mut lines: Vec<Vec<u8>> = Vec::new();
 
-        let res = read_lines(&mut AlwaysErrors, true, &mut |line| {
-            lines.push(line.to_vec())
-        });
+        let res = read_lines(
+            &mut AlwaysErrors,
+            ReadOptions {
+                skip_on_null: true,
+                crlf: false,
+            },
+            &mut |line| lines.push(line.to_vec()),
+        );
 
         let Err(Error::ReadFailed(err)) = res else {
             panic!("expected a ReadFailed error, got {res:?}");
@@ -177,12 +232,66 @@ mod tests {
 
         let mut lines: Vec<Vec<u8>> = Vec::new();
         let mut input = Cursor::new(input_bytes);
-        let res = read_lines(&mut input, false, &mut |line| lines.push(line.to_vec()));
+        let res = read_lines(
+            &mut input,
+            ReadOptions {
+                skip_on_null: false,
+                crlf: false,
+            },
+            &mut |line| lines.push(line.to_vec()),
+        );
 
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), ReadResult::FileRead);
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].len(), long_line_len);
         assert!(lines[0].iter().all(|&b| b == b'x'));
+    }
+
+    #[test]
+    fn without_crlf_a_trailing_cr_is_kept_as_part_of_the_line() {
+        let mut lines: Vec<Vec<u8>> = Vec::new();
+        let mut input = Cursor::new(b"foo\r\nbar");
+        let res = read_lines(
+            &mut input,
+            ReadOptions {
+                skip_on_null: false,
+                crlf: false,
+            },
+            &mut |line| lines.push(line.to_vec()),
+        );
+
+        assert!(res.is_ok());
+        assert_eq!(lines, vec![b"foo\r".to_vec(), b"bar".to_vec()]);
+    }
+
+    #[test]
+    fn crlf_strips_the_trailing_cr_even_when_split_across_a_read_boundary() {
+        // The '\r' lands as the very last byte of the first `read()` call
+        // (the buffer fills exactly), so the '\n' that completes the line
+        // only shows up in the next chunk - the strip must apply to the
+        // carried-over '\r', not just one still sitting in the same chunk
+        // as the '\n'.
+        let mut input_bytes = vec![b'x'; BUFFER_SIZE_BYTES - 1];
+        input_bytes.push(b'\r');
+        input_bytes.push(b'\n');
+        input_bytes.extend_from_slice(b"second");
+
+        let mut lines: Vec<Vec<u8>> = Vec::new();
+        let mut input = Cursor::new(input_bytes);
+        let res = read_lines(
+            &mut input,
+            ReadOptions {
+                skip_on_null: false,
+                crlf: true,
+            },
+            &mut |line| lines.push(line.to_vec()),
+        );
+
+        assert!(res.is_ok());
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0].len(), BUFFER_SIZE_BYTES - 1);
+        assert!(lines[0].iter().all(|&b| b == b'x'));
+        assert_eq!(lines[1], b"second");
     }
 }

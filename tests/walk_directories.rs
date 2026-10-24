@@ -40,7 +40,7 @@ fn finds_matches_in_every_file_of_a_flat_directory() {
         dir.path(),
         &search::Options {
             invert_matches: false,
-            search_binary: false,
+            ..Default::default()
         },
         &mut || recorder.printer(),
     )
@@ -66,7 +66,7 @@ fn recurses_into_nested_subdirectories() {
         dir.path(),
         &search::Options {
             invert_matches: false,
-            search_binary: false,
+            ..Default::default()
         },
         &mut || recorder.printer(),
     )
@@ -86,7 +86,7 @@ fn empty_directory_produces_no_matches_and_no_error() {
         dir.path(),
         &search::Options {
             invert_matches: false,
-            search_binary: false,
+            ..Default::default()
         },
         &mut || recorder.printer(),
     )
@@ -109,7 +109,7 @@ fn single_file_path_is_searched_directly() {
         &file,
         &search::Options {
             invert_matches: false,
-            search_binary: false,
+            ..Default::default()
         },
         &mut || recorder.printer(),
     )
@@ -130,7 +130,7 @@ fn nonexistent_path_returns_io_error() {
         &missing,
         &search::Options {
             invert_matches: false,
-            search_binary: false,
+            ..Default::default()
         },
         &mut || recorder.printer(),
     );
@@ -154,7 +154,7 @@ fn symlinks_are_skipped_rather_than_followed() {
         dir.path(),
         &search::Options {
             invert_matches: false,
-            search_binary: false,
+            ..Default::default()
         },
         &mut || recorder.printer(),
     )
@@ -184,7 +184,7 @@ fn non_utf8_path_is_searched_like_any_other_file() {
         dir.path(),
         &search::Options {
             invert_matches: false,
-            search_binary: false,
+            ..Default::default()
         },
         &mut || recorder.printer(),
     )

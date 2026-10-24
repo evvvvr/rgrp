@@ -28,6 +28,7 @@ impl From<SearchFailed> for Error {
 }
 
 /// Everything a run needs that isn't a closure.
+#[derive(Default)]
 pub struct Options {
     /// Patterns to search for, as raw regex strings (compiled by `run`).
     pub regexps: Vec<String>,
@@ -42,6 +43,10 @@ pub struct Options {
     /// When true, a file that looks binary is searched as text instead of
     /// being skipped. Mirrors ripgrep's `-a`/`--text`.
     pub search_binary: bool,
+    /// When true, a trailing `\r` before the `\n` is treated as part of the
+    /// line terminator and stripped, rather than as part of the line
+    /// content. Mirrors ripgrep's `--crlf`.
+    pub crlf: bool,
 }
 
 /// Runs a whole search end to end: compiles the patterns, starts the
@@ -69,6 +74,7 @@ pub fn run<P: Printer + BufferedOutput>(
     let search_options = search::Options {
         invert_matches: options.invert_matches,
         search_binary: options.search_binary,
+        crlf: options.crlf,
     };
 
     let handle = spawn_workers(

@@ -39,7 +39,7 @@ impl SharedWorkState {
         }
 
         Self {
-            work_queue: work_queue,
+            work_queue,
             pending_work_counter: AtomicUsize::new(0),
             condition: Condvar::new(),
             condition_guard: Mutex::new(()),

@@ -40,6 +40,11 @@ struct Cli {
     /// looks binary is skipped).
     #[arg(short = 'a', long = "text")]
     text: bool,
+
+    /// Treat CRLF ("\r\n") as the line terminator instead of just "\n"
+    /// (by default, a trailing "\r" is kept as part of the line).
+    #[arg(long = "crlf")]
+    crlf: bool,
 }
 
 fn parse_options() -> Options {
@@ -67,6 +72,7 @@ fn parse_options() -> Options {
         invert_matches: cli.invert_match,
         max_threads: cli.max_threads,
         search_binary: cli.text,
+        crlf: cli.crlf,
     }
 }
 
