@@ -11,30 +11,23 @@ pub enum ReadResult {
 
 #[derive(Debug)]
 pub enum Error {
-    ReadFailed,
+    ReadFailed(io::Error),
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::ReadFailed => write!(f, "error reading file"),
+            Error::ReadFailed(err) => write!(f, "error reading file: {err}"),
         }
     }
 }
 
 impl std::error::Error for Error {}
 
-impl From<io::Error> for Error {
-    fn from(_: io::Error) -> Self {
-        Error::ReadFailed
-    }
-}
-
 pub fn read_lines(
     reader: &mut impl Read,
     skip_on_null: bool,
     on_line_read: &mut impl FnMut(&[u8]),
-    on_error: &mut impl FnMut(io::Error),
 ) -> Result<ReadResult, Error> {
     let mut buffer = [0; BUFFER_SIZE_BYTES];
 
@@ -43,8 +36,6 @@ pub fn read_lines(
     // ranges into `buffer` alone wouldn't, since `buffer` gets overwritten
     // by the next `read` call.
     let mut line: Vec<u8> = Vec::new();
-
-    let mut had_error = false;
 
     loop {
         let res = reader.read(&mut buffer);
@@ -57,7 +48,7 @@ pub fn read_lines(
                     on_line_read(&line);
                 }
 
-                break;
+                return Ok(ReadResult::FileRead);
             }
             Ok(bytes_read) => {
                 if skip_on_null && buffer[..bytes_read].contains(&0) {
@@ -88,19 +79,9 @@ pub fn read_lines(
                 // into `line` to be completed by the next read
                 line.extend_from_slice(&buffer[line_start..bytes_read]);
             }
-            Err(err) => {
-                had_error = true;
-                on_error(err);
-                break;
-            }
+            Err(err) => return Err(Error::ReadFailed(err)),
         }
     }
-
-    if had_error {
-        return Err(Error::ReadFailed);
-    }
-
-    Ok(ReadResult::FileRead)
 }
 
 #[cfg(test)]
@@ -112,12 +93,7 @@ mod tests {
     fn can_read_lines_correctly() {
         let mut lines: Vec<Vec<u8>> = Vec::new();
         let mut input = Cursor::new(b"aa 11\n123 foo\n\nvoga");
-        let res = read_lines(
-            &mut input,
-            true,
-            &mut |line| lines.push(line.to_vec()),
-            &mut |_| {},
-        );
+        let res = read_lines(&mut input, true, &mut |line| lines.push(line.to_vec()));
 
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), ReadResult::FileRead);
@@ -136,12 +112,7 @@ mod tests {
 
         let mut lines: Vec<Vec<u8>> = Vec::new();
         let mut input = Cursor::new(input_bytes);
-        let res = read_lines(
-            &mut input,
-            false,
-            &mut |line| lines.push(line.to_vec()),
-            &mut |_| {},
-        );
+        let res = read_lines(&mut input, false, &mut |line| lines.push(line.to_vec()));
 
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), ReadResult::FileRead);
@@ -158,12 +129,7 @@ mod tests {
         // "this looks binary, don't search it" outcome
         let mut lines: Vec<Vec<u8>> = Vec::new();
         let mut input = Cursor::new(b"aa 11\x00 bc\nmore\n");
-        let res = read_lines(
-            &mut input,
-            true,
-            &mut |line| lines.push(line.to_vec()),
-            &mut |_| {},
-        );
+        let res = read_lines(&mut input, true, &mut |line| lines.push(line.to_vec()));
 
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), ReadResult::BinaryFileSkipped);
@@ -175,12 +141,7 @@ mod tests {
         let mut lines: Vec<Vec<u8>> = Vec::new();
         let mut input = Cursor::new(b"");
 
-        let res = read_lines(
-            &mut input,
-            true,
-            &mut |line| lines.push(line.to_vec()),
-            &mut |_| {},
-        );
+        let res = read_lines(&mut input, true, &mut |line| lines.push(line.to_vec()));
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), ReadResult::FileRead);
         assert!(lines.is_empty());
@@ -197,17 +158,15 @@ mod tests {
     #[test]
     fn stops_after_a_read_error_instead_of_looping_forever() {
         let mut lines: Vec<Vec<u8>> = Vec::new();
-        let mut error_count = 0;
 
-        let res = read_lines(
-            &mut AlwaysErrors,
-            true,
-            &mut |line| lines.push(line.to_vec()),
-            &mut |_| error_count += 1,
-        );
+        let res = read_lines(&mut AlwaysErrors, true, &mut |line| {
+            lines.push(line.to_vec())
+        });
 
-        assert!(res.is_err());
-        assert_eq!(error_count, 1);
+        let Err(Error::ReadFailed(err)) = res else {
+            panic!("expected a ReadFailed error, got {res:?}");
+        };
+        assert_eq!(err.to_string(), "boom");
         assert!(lines.is_empty());
     }
 
@@ -218,12 +177,7 @@ mod tests {
 
         let mut lines: Vec<Vec<u8>> = Vec::new();
         let mut input = Cursor::new(input_bytes);
-        let res = read_lines(
-            &mut input,
-            false,
-            &mut |line| lines.push(line.to_vec()),
-            &mut |_| {},
-        );
+        let res = read_lines(&mut input, false, &mut |line| lines.push(line.to_vec()));
 
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), ReadResult::FileRead);

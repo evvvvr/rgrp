@@ -161,12 +161,7 @@ fn search_reader<T: Printer>(
 
         line_number += 1;
     };
-    let res = read_lines(
-        &mut reader,
-        !options.search_binary,
-        &mut on_read_line,
-        &mut |_| {},
-    );
+    let res = read_lines(&mut reader, !options.search_binary, &mut on_read_line);
 
     match res {
         Ok(ReadResult::FileRead) => {
