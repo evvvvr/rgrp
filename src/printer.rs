@@ -1,4 +1,5 @@
 use std::fmt::Write;
+use std::path::Path;
 
 use owo_colors::OwoColorize;
 
@@ -13,7 +14,7 @@ pub trait Printer {
     /// per match.
     fn print(
         &mut self,
-        file_path: &str,
+        file_path: &Path,
         line_no: u64,
         line: &[u8],
         matches: &[regex::bytes::Match],
@@ -53,14 +54,15 @@ impl ColorPrinter {
 impl Printer for ColorPrinter {
     fn print(
         &mut self,
-        file_path: &str,
+        file_path: &Path,
         line_no: u64,
         line: &[u8],
         matches: &[regex::bytes::Match],
     ) {
         if !self.has_printed_filename {
             writeln!(self.output).expect("Error writing output");
-            writeln!(self.output, "{}", file_path.bold().purple()).expect("Error writing output");
+            writeln!(self.output, "{}", file_path.display().bold().purple())
+                .expect("Error writing output");
             self.has_printed_filename = true;
         }
 
@@ -137,14 +139,15 @@ impl MonochromePrinter {
 impl Printer for MonochromePrinter {
     fn print(
         &mut self,
-        file_path: &str,
+        file_path: &Path,
         _line_no: u64,
         line: &[u8],
         _matches: &[regex::bytes::Match],
     ) {
         writeln!(
             self.output,
-            "{file_path}: {}",
+            "{}: {}",
+            file_path.display(),
             String::from_utf8_lossy(line)
         )
         .expect("Error writing output");
@@ -195,7 +198,7 @@ mod tests {
         let matches: Vec<regex::bytes::Match> =
             foo.find_iter(line).chain(oo.find_iter(line)).collect();
 
-        printer.print("f", 1, line, &matches);
+        printer.print(Path::new("f"), 1, line, &matches);
         let output = strip_ansi(&printer.into_output());
 
         assert!(output.contains("foo bar"));
@@ -213,7 +216,7 @@ mod tests {
         let matches: Vec<regex::bytes::Match> = pattern.find_iter(&line).collect();
         assert_eq!((matches[0].start(), matches[0].end()), (2, 3));
 
-        printer.print("f", 1, &line, &matches);
+        printer.print(Path::new("f"), 1, &line, &matches);
         let output = strip_ansi(&printer.into_output());
 
         assert_eq!(output.matches('\u{FFFD}').count(), 0);

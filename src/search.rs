@@ -2,6 +2,7 @@ use crate::line_reader::{ReadResult, read_lines};
 use regex::bytes::Regex;
 use std::fs;
 use std::io::prelude::*;
+use std::path::{Path, PathBuf};
 
 use crate::printer::Printer;
 
@@ -12,9 +13,6 @@ pub enum Error {
     Io(std::io::Error),
     /// One of the search patterns failed to compile.
     Pattern(regex::Error),
-    /// A directory entry's path isn't valid UTF-8, so it's skipped rather
-    /// than aborting the rest of the walk.
-    NonUtf8Path,
     /// Reading a file's lines failed partway through.
     LineRead(crate::line_reader::Error),
 }
@@ -24,7 +22,6 @@ impl std::fmt::Display for Error {
         match self {
             Error::Io(err) => write!(f, "{err}"),
             Error::Pattern(err) => write!(f, "invalid search pattern: {err}"),
-            Error::NonUtf8Path => write!(f, "skipping non-UTF8 path"),
             Error::LineRead(err) => write!(f, "{err}"),
         }
     }
@@ -78,7 +75,7 @@ pub trait WorkQueue {
     /// Hands off a batch of newly discovered paths at once (rather than
     /// one at a time), so an implementation that needs to wake up other
     /// workers can do that once per directory instead of once per entry.
-    fn enqueue(&self, paths: impl Iterator<Item = String>);
+    fn enqueue(&self, paths: impl Iterator<Item = PathBuf>);
 }
 
 /// Searches one path against `patterns`.
@@ -87,10 +84,9 @@ pub trait WorkQueue {
 /// recursed into here - its entries are handed to `WorkQueue` for someone to pick up.
 pub fn search<T: Printer>(
     patterns: &[Regex],
-    path: &str,
+    path: &Path,
     options: &Options,
     printer: &mut T,
-    on_error: &mut impl FnMut(Error, &str),
     queue: &impl WorkQueue,
 ) -> Result<Outcome, Error> {
     // symlink_metadata (unlike metadata) reports the entry's own type instead
@@ -106,13 +102,7 @@ pub fn search<T: Printer>(
         let mut entries = Vec::new();
         for entry in fs::read_dir(path)? {
             let entry = entry?;
-            let entry_path = entry.path();
-            let Some(entry_path) = entry_path.to_str() else {
-                // non-UTF8 path - skip rather than aborting the whole walk
-                on_error(Error::NonUtf8Path, &entry_path.to_string_lossy());
-                continue;
-            };
-            entries.push(entry_path.to_string());
+            entries.push(entry.path());
         }
         queue.enqueue(entries.into_iter());
         return Ok(Outcome::Done);
@@ -128,7 +118,7 @@ pub fn search<T: Printer>(
 
 fn search_file<T: Printer>(
     patterns: &[Regex],
-    file_path: &str,
+    file_path: &Path,
     options: &Options,
     printer: &mut T,
 ) -> Result<Outcome, Error> {
@@ -138,7 +128,7 @@ fn search_file<T: Printer>(
 
 fn search_reader<T: Printer>(
     patterns: &[Regex],
-    file_path: &str,
+    file_path: &Path,
     options: &Options,
     mut reader: impl Read,
     printer: &mut T,
@@ -227,7 +217,7 @@ mod tests {
     impl Printer for RecordingPrinter {
         fn print(
             &mut self,
-            _file_path: &str,
+            _file_path: &Path,
             line_no: u64,
             line: &[u8],
             matches: &[regex::bytes::Match],
@@ -274,7 +264,7 @@ mod tests {
         let mut printer = RecordingPrinter::new();
         search_reader(
             &patterns,
-            "<test>",
+            Path::new("<test>"),
             options,
             Cursor::new(input.as_bytes()),
             &mut printer,

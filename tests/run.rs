@@ -20,10 +20,7 @@ fn reports_matches_from_good_paths_and_errors_for_bad_ones() {
 
     let options = Options {
         regexps: vec!["needle".to_string()],
-        files: vec![
-            good.to_str().unwrap().to_string(),
-            missing.to_str().unwrap().to_string(),
-        ],
+        files: vec![good.clone(), missing.clone()],
         ignore_case: false,
         invert_matches: false,
         max_threads: 1,
@@ -34,7 +31,12 @@ fn reports_matches_from_good_paths_and_errors_for_bad_ones() {
     let result = run(
         &options,
         move || recorder_for_closure.printer(),
-        move |_err, path| errors_for_closure.lock().unwrap().push(path.to_string()),
+        move |_err, path| {
+            errors_for_closure
+                .lock()
+                .unwrap()
+                .push(path.to_string_lossy().into_owned())
+        },
     );
 
     assert!(result.is_err());
@@ -58,7 +60,7 @@ fn succeeds_when_every_path_is_valid() {
 
     let options = Options {
         regexps: vec!["needle".to_string()],
-        files: vec![file.to_str().unwrap().to_string()],
+        files: vec![file.clone()],
         ignore_case: false,
         invert_matches: false,
         max_threads: 1,
@@ -68,7 +70,12 @@ fn succeeds_when_every_path_is_valid() {
     let result = run(
         &options,
         move || recorder_for_closure.printer(),
-        move |_err, path| errors_for_closure.lock().unwrap().push(path.to_string()),
+        move |_err, path| {
+            errors_for_closure
+                .lock()
+                .unwrap()
+                .push(path.to_string_lossy().into_owned())
+        },
     );
 
     assert!(result.is_ok());
@@ -85,7 +92,7 @@ fn ignore_case_matches_regardless_of_letter_case() {
 
     let options = Options {
         regexps: vec!["needle".to_string()],
-        files: vec![file.to_str().unwrap().to_string()],
+        files: vec![file.clone()],
         ignore_case: true,
         invert_matches: false,
         max_threads: 1,
@@ -114,7 +121,7 @@ fn without_ignore_case_only_exact_case_matches() {
 
     let options = Options {
         regexps: vec!["needle".to_string()],
-        files: vec![file.to_str().unwrap().to_string()],
+        files: vec![file.clone()],
         ignore_case: false,
         invert_matches: false,
         max_threads: 1,
@@ -143,7 +150,7 @@ fn invert_match_reports_lines_that_do_not_match() {
 
     let options = Options {
         regexps: vec!["needle".to_string()],
-        files: vec![file.to_str().unwrap().to_string()],
+        files: vec![file.clone()],
         ignore_case: false,
         invert_matches: true,
         max_threads: 1,

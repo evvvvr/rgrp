@@ -1,5 +1,6 @@
 use crossbeam::queue::SegQueue;
 use regex::bytes::Regex;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Condvar, Mutex, mpsc};
@@ -15,7 +16,7 @@ pub struct SharedWorkState {
     /// Paths waiting to be searched. A directory expands into its entries
     /// here rather than being recursed into directly, which is what lets
     /// different workers pick up different parts of the same walk.
-    pub work_queue: SegQueue<String>,
+    pub work_queue: SegQueue<PathBuf>,
     /// How many paths are currently being processed (popped, but not yet
     /// finished). Needed so a worker that finds the queue empty can tell
     /// "we're done" apart from "someone's mid-directory and about to push
@@ -30,7 +31,7 @@ pub struct SharedWorkState {
 impl SharedWorkState {
     /// Seeds the work queue with the initial paths (the ones given on the
     /// command line) and sets up empty/zeroed bookkeeping around it.
-    pub fn new(work_items: &[String]) -> Self {
+    pub fn new(work_items: &[PathBuf]) -> Self {
         let work_queue = SegQueue::new();
 
         for work_item in work_items {
@@ -47,7 +48,7 @@ impl SharedWorkState {
 }
 
 impl WorkQueue for SharedWorkState {
-    fn enqueue(&self, paths: impl Iterator<Item = String>) {
+    fn enqueue(&self, paths: impl Iterator<Item = PathBuf>) {
         for path in paths {
             self.work_queue.push(path);
         }
@@ -70,7 +71,7 @@ pub struct SearchFailed;
 /// their output and find out whether anything failed.
 pub struct WorkersHandle {
     threads: Vec<JoinHandle<()>>,
-    output_rx: Receiver<Result<String, (SearchError, String)>>,
+    output_rx: Receiver<Result<String, (SearchError, PathBuf)>>,
 }
 
 impl WorkersHandle {
@@ -83,7 +84,7 @@ impl WorkersHandle {
     pub fn consume_with(
         self,
         mut on_output: impl FnMut(String),
-        mut on_error: impl FnMut(SearchError, &str),
+        mut on_error: impl FnMut(SearchError, &Path),
     ) -> Result<(), SearchFailed> {
         let mut had_error = false;
 
@@ -111,7 +112,7 @@ pub struct SpawnOptions<'a> {
     /// The compiled patterns to search for.
     pub patterns: &'a [Regex],
     /// The starting paths given on the command line.
-    pub files: &'a [String],
+    pub files: &'a [PathBuf],
     /// Search behavior that doesn't depend on the pattern or the path.
     pub search_options: &'a SearchOptions,
     /// How many worker threads to use; `0` picks a number automatically.
@@ -139,7 +140,7 @@ pub fn spawn_workers<P: Printer + BufferedOutput>(
         opts.max_threads
     };
 
-    let (output_tx, output_rx) = mpsc::channel::<Result<String, (SearchError, String)>>();
+    let (output_tx, output_rx) = mpsc::channel::<Result<String, (SearchError, PathBuf)>>();
 
     for _ in 0..thread_count {
         let shared_state = Arc::clone(&shared_state);
@@ -148,15 +149,6 @@ pub fn spawn_workers<P: Printer + BufferedOutput>(
         let search_options = *opts.search_options;
         let output_tx = output_tx.clone();
         let thread = thread::spawn(move || {
-            // forwards the soft, in-flight errors `search` reports while
-            // expanding a directory (e.g. a non-UTF8 entry) into the same
-            // channel as path-level failures, so the consumer sees every
-            // error from one place
-            let report_tx = output_tx.clone();
-            let mut report_error = move |err: SearchError, path: &str| {
-                let _ = report_tx.send(Err((err, path.to_string())));
-            };
-
             loop {
                 let guard = shared_state.condition_guard.lock().unwrap();
                 let guard = shared_state
@@ -187,7 +179,6 @@ pub fn spawn_workers<P: Printer + BufferedOutput>(
                     &path,
                     &search_options,
                     &mut printer,
-                    &mut report_error,
                     &*shared_state,
                 );
 

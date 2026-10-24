@@ -2,6 +2,7 @@ use clap::{CommandFactory, Parser};
 
 use std::env;
 use std::io::IsTerminal;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use rgrp::printer::{ColorPrinter, MonochromePrinter};
@@ -44,7 +45,7 @@ struct Cli {
 fn parse_options() -> Options {
     let cli = Cli::parse();
 
-    let (patterns, path) = if cli.regexp.is_empty() {
+    let (patterns, paths) = if cli.regexp.is_empty() {
         let mut args = cli.args.into_iter();
         let Some(pattern) = args.next() else {
             Cli::command()
@@ -54,14 +55,14 @@ fn parse_options() -> Options {
                 )
                 .exit();
         };
-        (vec![pattern], args.collect())
+        (vec![pattern], args.collect::<Vec<String>>())
     } else {
         (cli.regexp, cli.args)
     };
 
     Options {
         regexps: patterns,
-        files: path,
+        files: paths.into_iter().map(PathBuf::from).collect(),
         ignore_case: cli.ignore_case,
         invert_matches: cli.invert_match,
         max_threads: cli.max_threads,
@@ -74,16 +75,16 @@ fn main() -> ExitCode {
 
     let no_terminal = !std::io::stdout().is_terminal() || env::var("NO_COLOR").is_ok();
 
-    let on_error = |e: search::Error, path: &str| match e {
-        search::Error::Io(err) => {
-            eprintln!("{PROGRAM_NAME}:{path} IO error for operation on path {path}: {err}")
-        }
-        search::Error::Pattern(err) => eprintln!("{PROGRAM_NAME}: pattern error: {err}"),
-        search::Error::NonUtf8Path => {
-            eprintln!("{PROGRAM_NAME}: skipping non-UTF8 path: {path}")
-        }
-        search::Error::LineRead(err) => {
-            eprintln!("{PROGRAM_NAME}:{path} error reading lines: {err}")
+    let on_error = |e: search::Error, path: &Path| {
+        let path = path.display();
+        match e {
+            search::Error::Io(err) => {
+                eprintln!("{PROGRAM_NAME}:{path} IO error for operation on path {path}: {err}")
+            }
+            search::Error::Pattern(err) => eprintln!("{PROGRAM_NAME}: pattern error: {err}"),
+            search::Error::LineRead(err) => {
+                eprintln!("{PROGRAM_NAME}:{path} error reading lines: {err}")
+            }
         }
     };
 

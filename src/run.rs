@@ -1,4 +1,5 @@
 use regex::bytes::RegexBuilder;
+use std::path::{Path, PathBuf};
 
 use crate::{
     concurrency::{SearchFailed, SpawnOptions, spawn_workers},
@@ -31,7 +32,7 @@ pub struct Options {
     /// Patterns to search for, as raw regex strings (compiled by `run`).
     pub regexps: Vec<String>,
     /// Starting paths given on the command line.
-    pub files: Vec<String>,
+    pub files: Vec<PathBuf>,
     /// Match patterns without regard to letter case.
     pub ignore_case: bool,
     /// Report lines that *don't* match instead of lines that do.
@@ -52,7 +53,7 @@ pub struct Options {
 pub fn run<P: Printer + BufferedOutput>(
     options: &Options,
     make_printer: impl FnMut() -> P + Send + Clone + 'static,
-    on_error: impl FnMut(search::Error, &str),
+    on_error: impl FnMut(search::Error, &Path),
 ) -> Result<(), Error> {
     // Compile search patterns and fail fast if one of them is invalid
     let patterns = options
