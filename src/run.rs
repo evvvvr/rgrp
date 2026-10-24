@@ -1,4 +1,4 @@
-use regex::RegexBuilder;
+use regex::bytes::RegexBuilder;
 
 use crate::{
     concurrency::{SearchFailed, SpawnOptions, spawn_workers},
@@ -38,6 +38,9 @@ pub struct Options {
     pub invert_matches: bool,
     /// How many worker threads to use; `0` picks a number automatically.
     pub max_threads: u8,
+    /// When true, a file that looks binary is searched as text instead of
+    /// being skipped. Mirrors ripgrep's `-a`/`--text`.
+    pub search_binary: bool,
 }
 
 /// Runs a whole search end to end: compiles the patterns, starts the
@@ -64,6 +67,7 @@ pub fn run<P: Printer + BufferedOutput>(
 
     let search_options = search::Options {
         invert_matches: options.invert_matches,
+        search_binary: options.search_binary,
     };
 
     let handle = spawn_workers(

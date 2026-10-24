@@ -1,12 +1,12 @@
 use crossbeam::queue::SegQueue;
-use regex::Regex;
+use regex::bytes::Regex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
 
 use crate::printer::{BufferedOutput, Printer};
-use crate::search::{Error as SearchError, Options as SearchOptions, WorkQueue, search};
+use crate::search::{Error as SearchError, Options as SearchOptions, Outcome, WorkQueue, search};
 
 /// The state every worker thread shares while walking a search: the queue
 /// of paths still to process, and the bookkeeping that lets workers agree
@@ -192,12 +192,13 @@ pub fn spawn_workers<P: Printer + BufferedOutput>(
                 );
 
                 match res {
-                    Ok(_) => {
+                    Ok(Outcome::Done) => {
                         let output = printer.into_output();
                         if !output.is_empty() {
                             let _ = output_tx.send(Result::Ok(output));
                         }
                     }
+                    Ok(Outcome::BinarySkipped) => {}
                     Err(err) => {
                         let _ = output_tx.send(Result::Err((err, path)));
                     }

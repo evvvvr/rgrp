@@ -34,6 +34,11 @@ struct Cli {
     /// A value of 0 (which is the default) causes rgrp to choose the thread count using heuristics.
     #[arg(short = 'j', long = "threads", default_value_t = 0)]
     max_threads: u8,
+
+    /// Search binary files as if they were text (by default, a file that
+    /// looks binary is skipped).
+    #[arg(short = 'a', long = "text")]
+    text: bool,
 }
 
 fn parse_options() -> Options {
@@ -60,6 +65,7 @@ fn parse_options() -> Options {
         ignore_case: cli.ignore_case,
         invert_matches: cli.invert_match,
         max_threads: cli.max_threads,
+        search_binary: cli.text,
     }
 }
 
@@ -75,6 +81,9 @@ fn main() -> ExitCode {
         search::Error::Pattern(err) => eprintln!("{PROGRAM_NAME}: pattern error: {err}"),
         search::Error::NonUtf8Path => {
             eprintln!("{PROGRAM_NAME}: skipping non-UTF8 path: {path}")
+        }
+        search::Error::LineRead(err) => {
+            eprintln!("{PROGRAM_NAME}:{path} error reading lines: {err}")
         }
     };
 

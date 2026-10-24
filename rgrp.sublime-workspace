@@ -4,6 +4,10 @@
 		"selected_items":
 		[
 			[
+				"Er",
+				"Error()"
+			],
+			[
 				"Mutex",
 				"Mutex"
 			]
@@ -12,27 +16,363 @@
 	"buffers":
 	[
 		{
-			"contents": "                                                                                                  \nrgrp  bytes-search [!1?3] ❯ ls                                                                    \n input    tests       󰡯 out               rgrp.sublime-project\n󰣞 src      Cargo.lock   profile.json.gz   rgrp.sublime-workspace\n target   Cargo.toml  󰂺 README.md\n                                                                                                  \nrgrp  bytes-search [!1?3] ❯ car Cargo.toml                                                        \nzsh: command not found: car\n                                                                                                  \nrgrp  bytes-search [!1?3] ❯ cat Cargo.toml                                                        \n─────┬────────────────────────────────────────────────────────────────────────────────────────────\n     │ File: Cargo.toml\n─────┼────────────────────────────────────────────────────────────────────────────────────────────\n   1 │ [package]\n   2 │ name = \"rgrp\"\n   3 │ version = \"0.1.0\"\n   4 │ edition = \"2024\"\n   5 │ \n   6 │ [dependencies]\n   7 │ clap = { version = \"4.6.7\", features = [\"derive\"] }\n   8 │ crossbeam = \"0.8.5\"\n   9 │ owo-colors = \"4.4.0\"\n  10 │ regex = \"1.13.1\"\n  11 │ \n  12 │ [dev-dependencies]\n  13 │ tempfile = \"3.23.0\"\n─────┴────────────────────────────────────────────────────────────────────────────────────────────\n                                                                                                  \nrgrp  bytes-search [!1?3] ❯ ",
+			"file": "src/search.rs",
+			"file_size": 12629,
+			"file_write_time": 134373227536968298,
 			"settings":
 			{
-				"buffer_size": 1556,
-				"line_ending": "Unix",
-				"name": "Login Shell",
-				"scratch": true
-			}
-		},
-		{
-			"file": "src/line_reader.rs",
-			"file_size": 4649,
-			"file_write_time": 134372644805086894,
-			"settings":
-			{
-				"buffer_size": 4649,
+				"buffer_size": 12629,
+				"encoding": "UTF-8",
 				"line_ending": "Unix"
 			},
 			"undo_stack":
 			[
+				[
+					35,
+					1,
+					"rust_test_toggle_ignore_internal",
+					{
+						"fn_line": 267,
+						"has_ignore": false
+					},
+					"AQAAALYgAAAAAAAAxCAAAAAAAAAAAAAA",
+					"BQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwvwAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAACxIQAAAAAAALEhAAAAAAAAAAAAAAAA8L8"
+				],
+				[
+					51,
+					1,
+					"rust_test_toggle_ignore_internal",
+					{
+						"fn_line": 268,
+						"has_ignore": true
+					},
+					"AQAAALYgAAAAAAAAtiAAAAAAAAAOAAAAICAgICNbaWdub3JlXQo",
+					"BQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwvwAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAADDIAAAAAAAAMMgAAAAAAAAAAAAAAAA8L8"
+				],
+				[
+					13,
+					1,
+					"rust_test_toggle_ignore_internal",
+					{
+						"fn_line": 303,
+						"has_ignore": false
+					},
+					"AQAAAF8lAAAAAAAAbSUAAAAAAAAAAAAA",
+					"BAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwvwAAAAABAAAAtiAAAAAAAAC2IAAAAAAAAAAAAAAAAPC/"
+				],
+				[
+					21,
+					1,
+					"left_delete",
+					null,
+					"AQAAAF8lAAAAAAAAXyUAAAAAAAANAAAAICAgICNbaWdub3JlXQ",
+					"BAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwvwAAAAABAAAAXyUAAAAAAABsJQAAAAAAAP///////+9/"
+				],
+				[
+					23,
+					1,
+					"left_delete",
+					null,
+					"AQAAAF4lAAAAAAAAXiUAAAAAAAABAAAACg",
+					"BAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwvwAAAAABAAAAXyUAAAAAAABfJQAAAAAAAAAAAAAAAPC/"
+				],
+				[
+					31,
+					1,
+					"insert",
+					{
+						"characters": "\n"
+					},
+					"AQAAAF4lAAAAAAAAXyUAAAAAAAAAAAAA",
+					"BAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwvwAAAAABAAAAXiUAAAAAAABeJQAAAAAAAAAAAAAAAPC/"
+				],
+				[
+					33,
+					1,
+					"reindent",
+					null,
+					"AQAAAF8lAAAAAAAAYyUAAAAAAAAAAAAA",
+					"BAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwvwAAAAABAAAAXyUAAAAAAABfJQAAAAAAAAAAAAAAAPC/"
+				],
+				[
+					35,
+					1,
+					"insert",
+					{
+						"characters": "#"
+					},
+					"AQAAAGMlAAAAAAAAZCUAAAAAAAAAAAAA",
+					"BAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwvwAAAAABAAAAYyUAAAAAAABjJQAAAAAAAAAAAAAAAPC/"
+				],
+				[
+					37,
+					1,
+					"insert",
+					{
+						"characters": "p"
+					},
+					"AQAAAGQlAAAAAAAAZSUAAAAAAAAAAAAA",
+					"BAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwvwAAAAABAAAAZCUAAAAAAABkJQAAAAAAAAAAAAAAAPC/"
+				],
+				[
+					39,
+					1,
+					"left_delete",
+					null,
+					"AQAAAGQlAAAAAAAAZCUAAAAAAAABAAAAcA",
+					"BAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwvwAAAAABAAAAZSUAAAAAAABlJQAAAAAAAAAAAAAAAPC/"
+				],
+				[
+					41,
+					1,
+					"insert_snippet",
+					{
+						"contents": "[$0]"
+					},
+					"AQAAAGQlAAAAAAAAZiUAAAAAAAAAAAAA",
+					"BAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwvwAAAAABAAAAZCUAAAAAAABkJQAAAAAAAAAAAAAAAPC/"
+				],
+				[
+					43,
+					1,
+					"insert",
+					{
+						"characters": "ingire"
+					},
+					"BgAAAGUlAAAAAAAAZiUAAAAAAAAAAAAAZiUAAAAAAABnJQAAAAAAAAAAAABnJQAAAAAAAGglAAAAAAAAAAAAAGglAAAAAAAAaSUAAAAAAAAAAAAAaSUAAAAAAABqJQAAAAAAAAAAAABqJQAAAAAAAGslAAAAAAAAAAAAAA",
+					"BAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwvwAAAAABAAAAZSUAAAAAAABlJQAAAAAAAAAAAAAAAPC/"
+				],
+				[
+					44,
+					5,
+					"left_delete",
+					null,
+					"BQAAAGolAAAAAAAAaiUAAAAAAAABAAAAZWklAAAAAAAAaSUAAAAAAAABAAAAcmglAAAAAAAAaCUAAAAAAAABAAAAaWclAAAAAAAAZyUAAAAAAAABAAAAZ2YlAAAAAAAAZiUAAAAAAAABAAAAbg",
+					"BAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwvwAAAAABAAAAayUAAAAAAABrJQAAAAAAAAAAAAAAAPC/"
+				],
+				[
+					45,
+					1,
+					"insert",
+					{
+						"characters": "gnore"
+					},
+					"BQAAAGYlAAAAAAAAZyUAAAAAAAAAAAAAZyUAAAAAAABoJQAAAAAAAAAAAABoJQAAAAAAAGklAAAAAAAAAAAAAGklAAAAAAAAaiUAAAAAAAAAAAAAaiUAAAAAAABrJQAAAAAAAAAAAAA",
+					"BAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwvwAAAAABAAAAZiUAAAAAAABmJQAAAAAAAAAAAAAAAPC/"
+				],
+				[
+					64,
+					1,
+					"cut",
+					null,
+					"AQAAAF8lAAAAAAAAXyUAAAAAAAANAAAAICAgICNbaWdub3JlXQ",
+					"BAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwvwAAAAABAAAAXyUAAAAAAABsJQAAAAAAAP///////+9/"
+				],
+				[
+					66,
+					1,
+					"left_delete",
+					null,
+					"AQAAAF4lAAAAAAAAXiUAAAAAAAABAAAACg",
+					"BAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwvwAAAAABAAAAXyUAAAAAAABfJQAAAAAAAAAAAAAAAPC/"
+				],
+				[
+					31,
+					1,
+					"insert_snippet",
+					{
+						"contents": "'"
+					},
+					"AQAAALEkAAAAAAAAsiQAAAAAAAAAAAAA",
+					"AwAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAQAAALEkAAAAAAAAsSQAAAAAAAAAAAAAAADwvw"
+				],
+				[
+					33,
+					1,
+					"left_delete",
+					null,
+					"AQAAALEkAAAAAAAAsSQAAAAAAAABAAAAJw",
+					"AwAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAQAAALIkAAAAAAAAsiQAAAAAAAAAAAAAAADwvw"
+				],
+				[
+					35,
+					1,
+					"insert",
+					{
+						"characters": "."
+					},
+					"AQAAALEkAAAAAAAAsiQAAAAAAAAAAAAA",
+					"AwAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAQAAALEkAAAAAAAAsSQAAAAAAAAAAAAAAADwvw"
+				],
+				[
+					37,
+					1,
+					"left_delete",
+					null,
+					"AQAAALEkAAAAAAAAsSQAAAAAAAABAAAALg",
+					"AwAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAQAAALIkAAAAAAAAsiQAAAAAAAAAAAAAAADwvw"
+				],
+				[
+					39,
+					1,
+					"insert",
+					{
+						"characters": "`"
+					},
+					"AQAAALEkAAAAAAAAsiQAAAAAAAAAAAAA",
+					"AwAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAQAAALEkAAAAAAAAsSQAAAAAAAAAAAAAAADwvw"
+				],
+				[
+					41,
+					1,
+					"left_delete",
+					null,
+					"AQAAALEkAAAAAAAAsSQAAAAAAAABAAAAYA",
+					"AwAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAQAAALIkAAAAAAAAsiQAAAAAAAAAAAAAAADwvw"
+				]
 			]
+		},
+		{
+			"file": "src/line_reader.rs",
+			"file_size": 6241,
+			"file_write_time": 134373233343353295,
+			"settings":
+			{
+				"buffer_size": 6241,
+				"encoding": "UTF-8",
+				"line_ending": "Unix"
+			}
+		},
+		{
+			"contents": "  TestLens\n\n  tests/run.rs\n      reports_matches_from_good_paths_and_errors_for_bad_ones\n      succeeds_when_every_path_is_valid\n      ignore_case_matches_regardless_of_letter_case\n      without_ignore_case_only_exact_case_matches\n      invert_match_reports_lines_that_do_not_match\n\n  tests/walk_directories.rs\n      finds_matches_in_every_file_of_a_flat_directory\n      recurses_into_nested_subdirectories\n      empty_directory_produces_no_matches_and_no_error\n      single_file_path_is_searched_directly\n      nonexistent_path_returns_io_error\n      symlinks_are_skipped_rather_than_followed\n      non_utf8_path_is_skipped_without_aborting_the_walk\n\n  src/line_reader.rs\n    ▸ tests\n        can_read_lines_correctly\n        a_line_longer_than_one_buffer_is_assembled_across_reads\n        skips_rest_of_file_once_a_null_byte_is_seen\n        reads_an_empty_file\n        reads_a_single_line_file_withot_newlines\n\n  src/search.rs\n    ▸ tests\n        line_numbers_start_at_one_and_increment\n        trims_both_lf_and_crlf_line_endings\n        scans_last_line_without_trailing_newline\n        reports_match_start_and_end_offsets\n        non_matching_lines_are_not_printed\n        eof_is_reported_exactly_once\n        empty_input_still_reports_eof_with_no_matches\n        multiple_matches_on_one_line_are_reported_in_a_single_call\n        matches_from_different_patterns_on_one_line_are_merged_in_order\n        matches_are_sorted_by_start_even_when_patterns_find_them_out_of_order\n        print_is_not_called_once_per_match\n        invert_matches_reports_only_lines_with_no_match\n        invert_matches_with_multiple_patterns_excludes_lines_matching_any_pattern\n        invert_matches_reports_no_match_offsets\n",
+			"settings":
+			{
+				"buffer_size": 1705,
+				"line_ending": "Unix",
+				"name": "TestLens",
+				"read_only": true,
+				"scratch": true
+			},
+			"undo_stack":
+			[
+				[
+					5,
+					1,
+					"append",
+					{
+						"characters": "  TestLens\n\n  tests/run.rs\n      reports_matches_from_good_paths_and_errors_for_bad_ones\n      succeeds_when_every_path_is_valid\n      ignore_case_matches_regardless_of_letter_case\n      without_ignore_case_only_exact_case_matches\n      invert_match_reports_lines_that_do_not_match\n\n  tests/walk_directories.rs\n      finds_matches_in_every_file_of_a_flat_directory\n      recurses_into_nested_subdirectories\n      empty_directory_produces_no_matches_and_no_error\n      single_file_path_is_searched_directly\n      nonexistent_path_returns_io_error\n      symlinks_are_skipped_rather_than_followed\n      non_utf8_path_is_skipped_without_aborting_the_walk\n\n  src/line_reader.rs\n    ▸ tests\n        can_read_lines_correctly\n        a_line_longer_than_one_buffer_is_assembled_across_reads\n        skips_rest_of_file_once_a_null_byte_is_seen\n        reads_an_empty_file\n        reads_a_single_line_file_withot_newlines\n\n  src/search.rs\n    ▸ tests\n        line_numbers_start_at_one_and_increment\n        trims_both_lf_and_crlf_line_endings\n        scans_last_line_without_trailing_newline\n        reports_match_start_and_end_offsets\n        non_matching_lines_are_not_printed\n        eof_is_reported_exactly_once\n        empty_input_still_reports_eof_with_no_matches\n        multiple_matches_on_one_line_are_reported_in_a_single_call\n        matches_from_different_patterns_on_one_line_are_merged_in_order\n        matches_are_sorted_by_start_even_when_patterns_find_them_out_of_order\n        print_is_not_called_once_per_match\n        invert_matches_reports_only_lines_with_no_match\n        invert_matches_with_multiple_patterns_excludes_lines_matching_any_pattern\n        invert_matches_reports_no_match_offsets\n",
+						"force": true
+					},
+					"AQAAAAAAAAAAAAAAqQYAAAAAAAAAAAAA",
+					"AQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/"
+				],
+				[
+					8,
+					1,
+					"right_delete",
+					null,
+					"AQAAAAAAAAAAAAAAAAAAAAAAAACtBgAAICBUZXN0TGVucwoKICB0ZXN0cy9ydW4ucnMKICAgICAgcmVwb3J0c19tYXRjaGVzX2Zyb21fZ29vZF9wYXRoc19hbmRfZXJyb3JzX2Zvcl9iYWRfb25lcwogICAgICBzdWNjZWVkc193aGVuX2V2ZXJ5X3BhdGhfaXNfdmFsaWQKICAgICAgaWdub3JlX2Nhc2VfbWF0Y2hlc19yZWdhcmRsZXNzX29mX2xldHRlcl9jYXNlCiAgICAgIHdpdGhvdXRfaWdub3JlX2Nhc2Vfb25seV9leGFjdF9jYXNlX21hdGNoZXMKICAgICAgaW52ZXJ0X21hdGNoX3JlcG9ydHNfbGluZXNfdGhhdF9kb19ub3RfbWF0Y2gKCiAgdGVzdHMvd2Fsa19kaXJlY3Rvcmllcy5ycwogICAgICBmaW5kc19tYXRjaGVzX2luX2V2ZXJ5X2ZpbGVfb2ZfYV9mbGF0X2RpcmVjdG9yeQogICAgICByZWN1cnNlc19pbnRvX25lc3RlZF9zdWJkaXJlY3RvcmllcwogICAgICBlbXB0eV9kaXJlY3RvcnlfcHJvZHVjZXNfbm9fbWF0Y2hlc19hbmRfbm9fZXJyb3IKICAgICAgc2luZ2xlX2ZpbGVfcGF0aF9pc19zZWFyY2hlZF9kaXJlY3RseQogICAgICBub25leGlzdGVudF9wYXRoX3JldHVybnNfaW9fZXJyb3IKICAgICAgc3ltbGlua3NfYXJlX3NraXBwZWRfcmF0aGVyX3RoYW5fZm9sbG93ZWQKICAgICAgbm9uX3V0ZjhfcGF0aF9pc19za2lwcGVkX3dpdGhvdXRfYWJvcnRpbmdfdGhlX3dhbGsKCiAgc3JjL2xpbmVfcmVhZGVyLnJzCiAgICDilrggdGVzdHMKICAgICAgICBjYW5fcmVhZF9saW5lc19jb3JyZWN0bHkKICAgICAgICBhX2xpbmVfbG9uZ2VyX3RoYW5fb25lX2J1ZmZlcl9pc19hc3NlbWJsZWRfYWNyb3NzX3JlYWRzCiAgICAgICAgc2tpcHNfcmVzdF9vZl9maWxlX29uY2VfYV9udWxsX2J5dGVfaXNfc2VlbgogICAgICAgIHJlYWRzX2FuX2VtcHR5X2ZpbGUKICAgICAgICByZWFkc19hX3NpbmdsZV9saW5lX2ZpbGVfd2l0aG90X25ld2xpbmVzCgogIHNyYy9zZWFyY2gucnMKICAgIOKWuCB0ZXN0cwogICAgICAgIGxpbmVfbnVtYmVyc19zdGFydF9hdF9vbmVfYW5kX2luY3JlbWVudAogICAgICAgIHRyaW1zX2JvdGhfbGZfYW5kX2NybGZfbGluZV9lbmRpbmdzCiAgICAgICAgc2NhbnNfbGFzdF9saW5lX3dpdGhvdXRfdHJhaWxpbmdfbmV3bGluZQogICAgICAgIHJlcG9ydHNfbWF0Y2hfc3RhcnRfYW5kX2VuZF9vZmZzZXRzCiAgICAgICAgbm9uX21hdGNoaW5nX2xpbmVzX2FyZV9ub3RfcHJpbnRlZAogICAgICAgIGVvZl9pc19yZXBvcnRlZF9leGFjdGx5X29uY2UKICAgICAgICBlbXB0eV9pbnB1dF9zdGlsbF9yZXBvcnRzX2VvZl93aXRoX25vX21hdGNoZXMKICAgICAgICBtdWx0aXBsZV9tYXRjaGVzX29uX29uZV9saW5lX2FyZV9yZXBvcnRlZF9pbl9hX3NpbmdsZV9jYWxsCiAgICAgICAgbWF0Y2hlc19mcm9tX2RpZmZlcmVudF9wYXR0ZXJuc19vbl9vbmVfbGluZV9hcmVfbWVyZ2VkX2luX29yZGVyCiAgICAgICAgbWF0Y2hlc19hcmVfc29ydGVkX2J5X3N0YXJ0X2V2ZW5fd2hlbl9wYXR0ZXJuc19maW5kX3RoZW1fb3V0X29mX29yZGVyCiAgICAgICAgcHJpbnRfaXNfbm90X2NhbGxlZF9vbmNlX3Blcl9tYXRjaAogICAgICAgIGludmVydF9tYXRjaGVzX3JlcG9ydHNfb25seV9saW5lc193aXRoX25vX21hdGNoCiAgICAgICAgaW52ZXJ0X21hdGNoZXNfd2l0aF9tdWx0aXBsZV9wYXR0ZXJuc19leGNsdWRlc19saW5lc19tYXRjaGluZ19hbnlfcGF0dGVybgogICAgICAgIGludmVydF9tYXRjaGVzX3JlcG9ydHNfbm9fbWF0Y2hfb2Zmc2V0cwo",
+					"AQAAAAAAAAABAAAAAAAAAAAAAACpBgAAAAAAAAAAAAAAAPC/"
+				],
+				[
+					9,
+					1,
+					"append",
+					{
+						"characters": "  TestLens\n\n  tests/run.rs\n      reports_matches_from_good_paths_and_errors_for_bad_ones\n      succeeds_when_every_path_is_valid\n      ignore_case_matches_regardless_of_letter_case\n      without_ignore_case_only_exact_case_matches\n      invert_match_reports_lines_that_do_not_match\n\n  tests/walk_directories.rs\n      finds_matches_in_every_file_of_a_flat_directory\n      recurses_into_nested_subdirectories\n      empty_directory_produces_no_matches_and_no_error\n      single_file_path_is_searched_directly\n      nonexistent_path_returns_io_error\n      symlinks_are_skipped_rather_than_followed\n      non_utf8_path_is_skipped_without_aborting_the_walk\n\n  src/line_reader.rs\n    ▸ tests\n        can_read_lines_correctly\n        a_line_longer_than_one_buffer_is_assembled_across_reads\n        skips_rest_of_file_once_a_null_byte_is_seen\n        reads_an_empty_file\n        reads_a_single_line_file_withot_newlines\n\n  src/search.rs\n    ▸ tests\n        line_numbers_start_at_one_and_increment\n        trims_both_lf_and_crlf_line_endings\n        scans_last_line_without_trailing_newline\n        reports_match_start_and_end_offsets\n        non_matching_lines_are_not_printed\n        eof_is_reported_exactly_once\n        empty_input_still_reports_eof_with_no_matches\n        multiple_matches_on_one_line_are_reported_in_a_single_call\n        matches_from_different_patterns_on_one_line_are_merged_in_order\n        matches_are_sorted_by_start_even_when_patterns_find_them_out_of_order\n        print_is_not_called_once_per_match\n        invert_matches_reports_only_lines_with_no_match\n        invert_matches_with_multiple_patterns_excludes_lines_matching_any_pattern\n        invert_matches_reports_no_match_offsets\n",
+						"force": true
+					},
+					"AQAAAAAAAAAAAAAAqQYAAAAAAAAAAAAA",
+					"AQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/"
+				],
+				[
+					11,
+					1,
+					"right_delete",
+					null,
+					"AQAAAAAAAAAAAAAAAAAAAAAAAACtBgAAICBUZXN0TGVucwoKICB0ZXN0cy9ydW4ucnMKICAgICAgcmVwb3J0c19tYXRjaGVzX2Zyb21fZ29vZF9wYXRoc19hbmRfZXJyb3JzX2Zvcl9iYWRfb25lcwogICAgICBzdWNjZWVkc193aGVuX2V2ZXJ5X3BhdGhfaXNfdmFsaWQKICAgICAgaWdub3JlX2Nhc2VfbWF0Y2hlc19yZWdhcmRsZXNzX29mX2xldHRlcl9jYXNlCiAgICAgIHdpdGhvdXRfaWdub3JlX2Nhc2Vfb25seV9leGFjdF9jYXNlX21hdGNoZXMKICAgICAgaW52ZXJ0X21hdGNoX3JlcG9ydHNfbGluZXNfdGhhdF9kb19ub3RfbWF0Y2gKCiAgdGVzdHMvd2Fsa19kaXJlY3Rvcmllcy5ycwogICAgICBmaW5kc19tYXRjaGVzX2luX2V2ZXJ5X2ZpbGVfb2ZfYV9mbGF0X2RpcmVjdG9yeQogICAgICByZWN1cnNlc19pbnRvX25lc3RlZF9zdWJkaXJlY3RvcmllcwogICAgICBlbXB0eV9kaXJlY3RvcnlfcHJvZHVjZXNfbm9fbWF0Y2hlc19hbmRfbm9fZXJyb3IKICAgICAgc2luZ2xlX2ZpbGVfcGF0aF9pc19zZWFyY2hlZF9kaXJlY3RseQogICAgICBub25leGlzdGVudF9wYXRoX3JldHVybnNfaW9fZXJyb3IKICAgICAgc3ltbGlua3NfYXJlX3NraXBwZWRfcmF0aGVyX3RoYW5fZm9sbG93ZWQKICAgICAgbm9uX3V0ZjhfcGF0aF9pc19za2lwcGVkX3dpdGhvdXRfYWJvcnRpbmdfdGhlX3dhbGsKCiAgc3JjL2xpbmVfcmVhZGVyLnJzCiAgICDilrggdGVzdHMKICAgICAgICBjYW5fcmVhZF9saW5lc19jb3JyZWN0bHkKICAgICAgICBhX2xpbmVfbG9uZ2VyX3RoYW5fb25lX2J1ZmZlcl9pc19hc3NlbWJsZWRfYWNyb3NzX3JlYWRzCiAgICAgICAgc2tpcHNfcmVzdF9vZl9maWxlX29uY2VfYV9udWxsX2J5dGVfaXNfc2VlbgogICAgICAgIHJlYWRzX2FuX2VtcHR5X2ZpbGUKICAgICAgICByZWFkc19hX3NpbmdsZV9saW5lX2ZpbGVfd2l0aG90X25ld2xpbmVzCgogIHNyYy9zZWFyY2gucnMKICAgIOKWuCB0ZXN0cwogICAgICAgIGxpbmVfbnVtYmVyc19zdGFydF9hdF9vbmVfYW5kX2luY3JlbWVudAogICAgICAgIHRyaW1zX2JvdGhfbGZfYW5kX2NybGZfbGluZV9lbmRpbmdzCiAgICAgICAgc2NhbnNfbGFzdF9saW5lX3dpdGhvdXRfdHJhaWxpbmdfbmV3bGluZQogICAgICAgIHJlcG9ydHNfbWF0Y2hfc3RhcnRfYW5kX2VuZF9vZmZzZXRzCiAgICAgICAgbm9uX21hdGNoaW5nX2xpbmVzX2FyZV9ub3RfcHJpbnRlZAogICAgICAgIGVvZl9pc19yZXBvcnRlZF9leGFjdGx5X29uY2UKICAgICAgICBlbXB0eV9pbnB1dF9zdGlsbF9yZXBvcnRzX2VvZl93aXRoX25vX21hdGNoZXMKICAgICAgICBtdWx0aXBsZV9tYXRjaGVzX29uX29uZV9saW5lX2FyZV9yZXBvcnRlZF9pbl9hX3NpbmdsZV9jYWxsCiAgICAgICAgbWF0Y2hlc19mcm9tX2RpZmZlcmVudF9wYXR0ZXJuc19vbl9vbmVfbGluZV9hcmVfbWVyZ2VkX2luX29yZGVyCiAgICAgICAgbWF0Y2hlc19hcmVfc29ydGVkX2J5X3N0YXJ0X2V2ZW5fd2hlbl9wYXR0ZXJuc19maW5kX3RoZW1fb3V0X29mX29yZGVyCiAgICAgICAgcHJpbnRfaXNfbm90X2NhbGxlZF9vbmNlX3Blcl9tYXRjaAogICAgICAgIGludmVydF9tYXRjaGVzX3JlcG9ydHNfb25seV9saW5lc193aXRoX25vX21hdGNoCiAgICAgICAgaW52ZXJ0X21hdGNoZXNfd2l0aF9tdWx0aXBsZV9wYXR0ZXJuc19leGNsdWRlc19saW5lc19tYXRjaGluZ19hbnlfcGF0dGVybgogICAgICAgIGludmVydF9tYXRjaGVzX3JlcG9ydHNfbm9fbWF0Y2hfb2Zmc2V0cwo",
+					"AQAAAAAAAAABAAAAAAAAAAAAAACpBgAAAAAAAAAAAAAAAPC/"
+				],
+				[
+					12,
+					1,
+					"append",
+					{
+						"characters": "  TestLens\n\n  tests/run.rs\n      reports_matches_from_good_paths_and_errors_for_bad_ones\n      succeeds_when_every_path_is_valid\n      ignore_case_matches_regardless_of_letter_case\n      without_ignore_case_only_exact_case_matches\n      invert_match_reports_lines_that_do_not_match\n\n  tests/walk_directories.rs\n      finds_matches_in_every_file_of_a_flat_directory\n      recurses_into_nested_subdirectories\n      empty_directory_produces_no_matches_and_no_error\n      single_file_path_is_searched_directly\n      nonexistent_path_returns_io_error\n      symlinks_are_skipped_rather_than_followed\n      non_utf8_path_is_skipped_without_aborting_the_walk\n\n  src/line_reader.rs\n    ▸ tests\n        can_read_lines_correctly\n        a_line_longer_than_one_buffer_is_assembled_across_reads\n        skips_rest_of_file_once_a_null_byte_is_seen\n        reads_an_empty_file\n        reads_a_single_line_file_withot_newlines\n\n  src/search.rs\n    ▸ tests\n        line_numbers_start_at_one_and_increment\n        trims_both_lf_and_crlf_line_endings\n        scans_last_line_without_trailing_newline\n        reports_match_start_and_end_offsets\n        non_matching_lines_are_not_printed\n        eof_is_reported_exactly_once\n        empty_input_still_reports_eof_with_no_matches\n        multiple_matches_on_one_line_are_reported_in_a_single_call\n        matches_from_different_patterns_on_one_line_are_merged_in_order\n        matches_are_sorted_by_start_even_when_patterns_find_them_out_of_order\n        print_is_not_called_once_per_match\n        invert_matches_reports_only_lines_with_no_match\n        invert_matches_with_multiple_patterns_excludes_lines_matching_any_pattern\n        invert_matches_reports_no_match_offsets\n",
+						"force": true
+					},
+					"AQAAAAAAAAAAAAAAqQYAAAAAAAAAAAAA",
+					"AQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/"
+				],
+				[
+					14,
+					1,
+					"right_delete",
+					null,
+					"AQAAAAAAAAAAAAAAAAAAAAAAAACtBgAAICBUZXN0TGVucwoKICB0ZXN0cy9ydW4ucnMKICAgICAgcmVwb3J0c19tYXRjaGVzX2Zyb21fZ29vZF9wYXRoc19hbmRfZXJyb3JzX2Zvcl9iYWRfb25lcwogICAgICBzdWNjZWVkc193aGVuX2V2ZXJ5X3BhdGhfaXNfdmFsaWQKICAgICAgaWdub3JlX2Nhc2VfbWF0Y2hlc19yZWdhcmRsZXNzX29mX2xldHRlcl9jYXNlCiAgICAgIHdpdGhvdXRfaWdub3JlX2Nhc2Vfb25seV9leGFjdF9jYXNlX21hdGNoZXMKICAgICAgaW52ZXJ0X21hdGNoX3JlcG9ydHNfbGluZXNfdGhhdF9kb19ub3RfbWF0Y2gKCiAgdGVzdHMvd2Fsa19kaXJlY3Rvcmllcy5ycwogICAgICBmaW5kc19tYXRjaGVzX2luX2V2ZXJ5X2ZpbGVfb2ZfYV9mbGF0X2RpcmVjdG9yeQogICAgICByZWN1cnNlc19pbnRvX25lc3RlZF9zdWJkaXJlY3RvcmllcwogICAgICBlbXB0eV9kaXJlY3RvcnlfcHJvZHVjZXNfbm9fbWF0Y2hlc19hbmRfbm9fZXJyb3IKICAgICAgc2luZ2xlX2ZpbGVfcGF0aF9pc19zZWFyY2hlZF9kaXJlY3RseQogICAgICBub25leGlzdGVudF9wYXRoX3JldHVybnNfaW9fZXJyb3IKICAgICAgc3ltbGlua3NfYXJlX3NraXBwZWRfcmF0aGVyX3RoYW5fZm9sbG93ZWQKICAgICAgbm9uX3V0ZjhfcGF0aF9pc19za2lwcGVkX3dpdGhvdXRfYWJvcnRpbmdfdGhlX3dhbGsKCiAgc3JjL2xpbmVfcmVhZGVyLnJzCiAgICDilrggdGVzdHMKICAgICAgICBjYW5fcmVhZF9saW5lc19jb3JyZWN0bHkKICAgICAgICBhX2xpbmVfbG9uZ2VyX3RoYW5fb25lX2J1ZmZlcl9pc19hc3NlbWJsZWRfYWNyb3NzX3JlYWRzCiAgICAgICAgc2tpcHNfcmVzdF9vZl9maWxlX29uY2VfYV9udWxsX2J5dGVfaXNfc2VlbgogICAgICAgIHJlYWRzX2FuX2VtcHR5X2ZpbGUKICAgICAgICByZWFkc19hX3NpbmdsZV9saW5lX2ZpbGVfd2l0aG90X25ld2xpbmVzCgogIHNyYy9zZWFyY2gucnMKICAgIOKWuCB0ZXN0cwogICAgICAgIGxpbmVfbnVtYmVyc19zdGFydF9hdF9vbmVfYW5kX2luY3JlbWVudAogICAgICAgIHRyaW1zX2JvdGhfbGZfYW5kX2NybGZfbGluZV9lbmRpbmdzCiAgICAgICAgc2NhbnNfbGFzdF9saW5lX3dpdGhvdXRfdHJhaWxpbmdfbmV3bGluZQogICAgICAgIHJlcG9ydHNfbWF0Y2hfc3RhcnRfYW5kX2VuZF9vZmZzZXRzCiAgICAgICAgbm9uX21hdGNoaW5nX2xpbmVzX2FyZV9ub3RfcHJpbnRlZAogICAgICAgIGVvZl9pc19yZXBvcnRlZF9leGFjdGx5X29uY2UKICAgICAgICBlbXB0eV9pbnB1dF9zdGlsbF9yZXBvcnRzX2VvZl93aXRoX25vX21hdGNoZXMKICAgICAgICBtdWx0aXBsZV9tYXRjaGVzX29uX29uZV9saW5lX2FyZV9yZXBvcnRlZF9pbl9hX3NpbmdsZV9jYWxsCiAgICAgICAgbWF0Y2hlc19mcm9tX2RpZmZlcmVudF9wYXR0ZXJuc19vbl9vbmVfbGluZV9hcmVfbWVyZ2VkX2luX29yZGVyCiAgICAgICAgbWF0Y2hlc19hcmVfc29ydGVkX2J5X3N0YXJ0X2V2ZW5fd2hlbl9wYXR0ZXJuc19maW5kX3RoZW1fb3V0X29mX29yZGVyCiAgICAgICAgcHJpbnRfaXNfbm90X2NhbGxlZF9vbmNlX3Blcl9tYXRjaAogICAgICAgIGludmVydF9tYXRjaGVzX3JlcG9ydHNfb25seV9saW5lc193aXRoX25vX21hdGNoCiAgICAgICAgaW52ZXJ0X21hdGNoZXNfd2l0aF9tdWx0aXBsZV9wYXR0ZXJuc19leGNsdWRlc19saW5lc19tYXRjaGluZ19hbnlfcGF0dGVybgogICAgICAgIGludmVydF9tYXRjaGVzX3JlcG9ydHNfbm9fbWF0Y2hfb2Zmc2V0cwo",
+					"AQAAAAAAAAABAAAAAAAAAAAAAACpBgAAAAAAAAAAAAAAAPC/"
+				],
+				[
+					15,
+					1,
+					"append",
+					{
+						"characters": "  TestLens\n\n  tests/run.rs\n      reports_matches_from_good_paths_and_errors_for_bad_ones\n      succeeds_when_every_path_is_valid\n      ignore_case_matches_regardless_of_letter_case\n      without_ignore_case_only_exact_case_matches\n      invert_match_reports_lines_that_do_not_match\n\n  tests/walk_directories.rs\n      finds_matches_in_every_file_of_a_flat_directory\n      recurses_into_nested_subdirectories\n      empty_directory_produces_no_matches_and_no_error\n      single_file_path_is_searched_directly\n      nonexistent_path_returns_io_error\n      symlinks_are_skipped_rather_than_followed\n      non_utf8_path_is_skipped_without_aborting_the_walk\n\n  src/line_reader.rs\n    ▸ tests\n        can_read_lines_correctly\n        a_line_longer_than_one_buffer_is_assembled_across_reads\n        skips_rest_of_file_once_a_null_byte_is_seen\n        reads_an_empty_file\n        reads_a_single_line_file_withot_newlines\n\n  src/search.rs\n    ▸ tests\n        line_numbers_start_at_one_and_increment\n        trims_both_lf_and_crlf_line_endings\n        scans_last_line_without_trailing_newline\n        reports_match_start_and_end_offsets\n        non_matching_lines_are_not_printed\n        eof_is_reported_exactly_once\n        empty_input_still_reports_eof_with_no_matches\n        multiple_matches_on_one_line_are_reported_in_a_single_call\n        matches_from_different_patterns_on_one_line_are_merged_in_order\n        matches_are_sorted_by_start_even_when_patterns_find_them_out_of_order\n        print_is_not_called_once_per_match\n        invert_matches_reports_only_lines_with_no_match\n        invert_matches_with_multiple_patterns_excludes_lines_matching_any_pattern\n        invert_matches_reports_no_match_offsets\n",
+						"force": true
+					},
+					"AQAAAAAAAAAAAAAAqQYAAAAAAAAAAAAA",
+					"AQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/"
+				]
+			]
+		},
+		{
+			"file": "tests/walk_directories.rs",
+			"file_size": 5804,
+			"file_write_time": 134373236308166950,
+			"settings":
+			{
+				"buffer_size": 5804,
+				"encoding": "UTF-8",
+				"line_ending": "Unix"
+			},
+			"undo_stack":
+			[
+				[
+					3,
+					1,
+					"test_lens_toggle_ignore_internal",
+					{
+						"adapter_id": "rust",
+						"fn_line": 36,
+						"has_ignore": false
+					},
+					"AQAAAMIDAAAAAAAAzAMAAAAAAAAAAAAA",
+					"AgAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8"
+				],
+				[
+					3,
+					1,
+					"test_lens_toggle_ignore_internal",
+					{
+						"adapter_id": "rust",
+						"fn_line": 37,
+						"has_ignore": true
+					},
+					"AQAAAMIDAAAAAAAAwgMAAAAAAAAKAAAAI1tpZ25vcmVdCg",
+					"AQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/"
+				]
+			]
+		},
+		{
+			"file": "src/run.rs",
+			"file_size": 2494,
+			"file_write_time": 134373226271116360,
+			"settings":
+			{
+				"buffer_size": 2494,
+				"encoding": "UTF-8",
+				"line_ending": "Unix"
+			}
 		}
 	],
 	"build_system": "",
@@ -46,6 +386,42 @@
 		"last_filter": "",
 		"selected_items":
 		[
+			[
+				"explor",
+				"TestLens: Open Test Explorer"
+			],
+			[
+				"exlore",
+				"TestLens: Open Test Explorer"
+			],
+			[
+				"terminus ope",
+				"Terminus: Open Default Shell in Panel"
+			],
+			[
+				"test",
+				"TestLens: Open Test Explorer"
+			],
+			[
+				"test ",
+				"TestLens: Open Test Explorer"
+			],
+			[
+				"rust",
+				"Rust Tests: Open Test Explorer"
+			],
+			[
+				"rust ",
+				"Rust Tests: Open Test Explorer"
+			],
+			[
+				"rust te",
+				"Rust Tests: Refresh Explorer"
+			],
+			[
+				"te",
+				"Terminus: Open Default Shell in Tab (View)"
+			],
 			[
 				"ter",
 				"Terminus: Open Default Shell in Tab (View)"
@@ -119,7 +495,7 @@
 	},
 	"console":
 	{
-		"height": 0.0,
+		"height": 370.0,
 		"history":
 		[
 		]
@@ -140,12 +516,14 @@
 	],
 	"file_history":
 	[
-		"/Users/voga/projects/rgrp/src/line_reader.rs",
-		"/Users/voga/camapi/README.md",
 		"/Users/voga/projects/rgrp/src/search.rs",
+		"/Users/voga/projects/rgrp/src/line_reader.rs",
+		"/Users/voga/projects/rgrp/tests/walk_directories.rs",
+		"/Users/voga/projects/rgrp/src/run.rs",
+		"/Users/voga/projects/rgrp/.git/COMMIT_EDITMSG",
+		"/Users/voga/camapi/README.md",
 		"/Users/voga/projects/rgrp/src/concurrency.rs",
 		"/Users/voga/projects/rgrp/.git/MERGE_MSG",
-		"/Users/voga/projects/rgrp/.git/COMMIT_EDITMSG",
 		"/Users/voga/.config/starship.toml",
 		"/Users/voga/.zshrc",
 		"/Users/voga/Library/Application Support/prefs",
@@ -265,13 +643,11 @@
 		"/Users/voga/Desktop/Hausaufgaben/15.06.2025 2.txt",
 		"/Users/voga/Desktop/Hausaufgaben/15.06.2025",
 		"/Users/voga/Desktop/invitation adm,in",
-		"/Users/voga/dotfiles/sublime-text/Preferences.sublime-settings",
-		"/Users/voga/Library/Application Support/Sublime Text/Packages/Default/Preferences.sublime-settings",
-		"/Users/voga/Library/Application Support/Sublime Text/Packages/User/Preferences.sublime-settings"
+		"/Users/voga/dotfiles/sublime-text/Preferences.sublime-settings"
 	],
 	"find":
 	{
-		"height": 41.0
+		"height": 43.0
 	},
 	"find_in_files":
 	{
@@ -285,6 +661,10 @@
 		"case_sensitive": false,
 		"find_history":
 		[
+			"err ",
+			"err",
+			"Error",
+			"error"
 		],
 		"highlight": true,
 		"in_selection": false,
@@ -308,30 +688,40 @@
 			[
 				{
 					"buffer": 0,
+					"file": "src/search.rs",
 					"semi_transient": false,
 					"settings":
 					{
-						"buffer_size": 1556,
+						"buffer_size": 12629,
 						"regions":
 						{
 						},
 						"selection":
 						[
 							[
-								1556,
-								1556
+								9119,
+								9119
 							]
 						],
 						"settings":
 						{
-							"__vi_external_disable": true,
-							"auto_complete": false,
-							"auto_complete_commit_on_tab": false,
+							"auto_complete_triggers":
+							[
+								{
+									"characters": "<",
+									"selector": "text.html, text.xml"
+								},
+								{
+									"rhs_empty": true,
+									"selector": "punctuation.accessor"
+								},
+								{
+									"characters": ":.'(",
+									"selector": "meta.tag, source - comment - string.quoted.double.block - string.quoted.single.block - string.unquoted.heredoc",
+									"server": "LSP-rust-analyzer"
+								}
+							],
 							"bracket_highlighter.busy": false,
-							"bracket_highlighter.clone_locations":
-							{
-							},
-							"bracket_highlighter.ignore": true,
 							"bracket_highlighter.locations":
 							{
 								"close":
@@ -406,93 +796,37 @@
 								"bh_unmatched_content"
 							],
 							"color_helper.refresh": true,
-							"color_scheme": "Terminus.hidden-color-scheme",
-							"default_dir": "/Users/voga/projects/rgrp",
-							"draw_centered": false,
-							"draw_indent_guides": false,
-							"draw_unicode_white_space": false,
-							"draw_white_space": "none",
-							"git_gutter_is_enabled": false,
-							"gutter": false,
-							"highlight_line": false,
-							"is_widget": true,
-							"lsp_uri": "buffer:42",
-							"result_base_dir": "/Users/voga/projects/rgrp",
-							"result_file_regex": null,
-							"result_line_regex": null,
-							"rulers":
-							[
-								500
-							],
-							"scroll_past_end": true,
-							"syntax": "Terminus View.sublime-syntax",
-							"terminus.highlight_counter": 215,
-							"terminus_view": true,
-							"terminus_view.args":
-							{
-								"auto_close": true,
-								"cancellable": false,
-								"cmd":
-								[
-									"/bin/zsh",
-									"-i",
-									"-l"
-								],
-								"cwd": "/Users/voga/projects/rgrp",
-								"default_title": "Login Shell",
-								"env":
-								{
-									"LANG": "C.UTF-8",
-									"PROMPT_TOOLKIT_COLOR_DEPTH": "DEPTH_8_BIT",
-									"TERM": "xterm-256color",
-									"TERMINUS_SUBLIME": "1",
-									"TERM_PROGRAM": "Terminus-Sublime"
-								},
-								"file_regex": null,
-								"line_regex": null,
-								"panel_name": "Terminus",
-								"reactivable": true,
-								"show_in_panel": null,
-								"tag": null,
-								"timeit": false,
-								"title": null,
-								"view_settings":
-								{
-								}
-							},
-							"terminus_view.cancellable": false,
-							"terminus_view.key.ctrl+k": true,
-							"terminus_view.key.ctrl+p": true,
-							"terminus_view.natural_keyboard": true,
-							"terminus_view.reactivable": true,
-							"terminus_view.tag": null,
-							"terminus_view.viewport_y": 98.0,
-							"word_wrap": false
+							"git_gutter_is_enabled": true,
+							"lsp_active": true,
+							"lsp_uri": "file:///Users/voga/projects/rgrp/src/search.rs",
+							"show_definitions": false,
+							"syntax": "Packages/Rust/Rust.sublime-syntax",
+							"tab_size": 4,
+							"translate_tabs_to_spaces": true
 						},
 						"translation.x": 0.0,
-						"translation.y": 0.0,
+						"translation.y": 10953.0,
 						"zoom_level": 1.0
 					},
-					"stack_index": 1,
+					"stack_index": 3,
 					"stack_multiselect": false,
 					"type": "text"
 				},
 				{
 					"buffer": 1,
 					"file": "src/line_reader.rs",
-					"selected": true,
 					"semi_transient": false,
 					"settings":
 					{
-						"buffer_size": 4649,
+						"buffer_size": 6241,
 						"regions":
 						{
 						},
 						"selection":
 						[
 							[
-								3548,
-								3548
+								604,
+								604
 							]
 						],
 						"settings":
@@ -518,27 +852,12 @@
 							{
 								"close":
 								{
-									"1":
-									[
-										3971,
-										3972
-									]
 								},
 								"icon":
 								{
-									"1":
-									[
-										"Packages/BracketHighlighter/icons/curly_bracket.png",
-										"region.purplish"
-									]
 								},
 								"open":
 								{
-									"1":
-									[
-										3132,
-										3133
-									]
 								},
 								"unmatched":
 								{
@@ -617,7 +936,7 @@
 								"current_ext": ".rs",
 								"current_syntax": "Rust/Rust",
 								"enabled": true,
-								"last_updated": 1792791739.23,
+								"last_updated": 1792850016.97,
 								"scanning": "-comment"
 							},
 							"git_gutter_is_enabled": true,
@@ -629,10 +948,333 @@
 							"translate_tabs_to_spaces": true
 						},
 						"translation.x": 0.0,
-						"translation.y": 2766.0,
+						"translation.y": 2763.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 2,
+					"stack_multiselect": false,
+					"type": "text"
+				},
+				{
+					"buffer": 2,
+					"selected": true,
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 1705,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								0,
+								0
+							]
+						],
+						"settings":
+						{
+							"bracket_highlighter.busy": false,
+							"color_helper.scan":
+							{
+								"allow_scanning": false,
+								"color_class":
+								[
+									{
+										"class": "css-level-4",
+										"scopes": ""
+									}
+								],
+								"color_trigger": "(?xi)\n(?:\n    \\b(?<![-#&$])(?:\n        color\\((?!\\s*-)|(?:hsla?|(?:ok)?(?:lch|lab)|hwb|rgba?)\\(\n) |\n\\b(?<![-#&$])[\\w]{3,}(?![(-])\\b|(?<![&])\\#)\n",
+								"current_ext": null,
+								"current_syntax": "Text/Plain text",
+								"enabled": true,
+								"last_updated": 1792850016.97,
+								"scanning": "-comment"
+							},
+							"default_dir": "/Users/voga/projects/rgrp/src",
+							"git_gutter_is_enabled": false,
+							"gutter": false,
+							"line_numbers": false,
+							"lsp_uri": "buffer:54",
+							"syntax": "Packages/Text/Plain text.tmLanguage",
+							"test_lens_explorer": true,
+							"word_wrap": false
+						},
+						"translation.x": 0.0,
+						"translation.y": 361.0,
 						"zoom_level": 1.0
 					},
 					"stack_index": 0,
+					"stack_multiselect": false,
+					"type": "text"
+				},
+				{
+					"buffer": 3,
+					"file": "tests/walk_directories.rs",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 5804,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								0,
+								0
+							]
+						],
+						"settings":
+						{
+							"auto_complete_triggers":
+							[
+								{
+									"characters": "<",
+									"selector": "text.html, text.xml"
+								},
+								{
+									"rhs_empty": true,
+									"selector": "punctuation.accessor"
+								},
+								{
+									"characters": ":.'(",
+									"selector": "meta.tag, source - comment - string.quoted.double.block - string.quoted.single.block - string.unquoted.heredoc",
+									"server": "LSP-rust-analyzer"
+								}
+							],
+							"bracket_highlighter.busy": false,
+							"bracket_highlighter.locations":
+							{
+								"close":
+								{
+								},
+								"icon":
+								{
+								},
+								"open":
+								{
+								},
+								"unmatched":
+								{
+								}
+							},
+							"bracket_highlighter.regions":
+							[
+								"bh_angle",
+								"bh_angle_center",
+								"bh_angle_open",
+								"bh_angle_close",
+								"bh_angle_content",
+								"bh_c_define",
+								"bh_c_define_center",
+								"bh_c_define_open",
+								"bh_c_define_close",
+								"bh_c_define_content",
+								"bh_curly",
+								"bh_curly_center",
+								"bh_curly_open",
+								"bh_curly_close",
+								"bh_curly_content",
+								"bh_default",
+								"bh_default_center",
+								"bh_default_open",
+								"bh_default_close",
+								"bh_default_content",
+								"bh_double_quote",
+								"bh_double_quote_center",
+								"bh_double_quote_open",
+								"bh_double_quote_close",
+								"bh_double_quote_content",
+								"bh_regex",
+								"bh_regex_center",
+								"bh_regex_open",
+								"bh_regex_close",
+								"bh_regex_content",
+								"bh_round",
+								"bh_round_center",
+								"bh_round_open",
+								"bh_round_close",
+								"bh_round_content",
+								"bh_single_quote",
+								"bh_single_quote_center",
+								"bh_single_quote_open",
+								"bh_single_quote_close",
+								"bh_single_quote_content",
+								"bh_square",
+								"bh_square_center",
+								"bh_square_open",
+								"bh_square_close",
+								"bh_square_content",
+								"bh_tag",
+								"bh_tag_center",
+								"bh_tag_open",
+								"bh_tag_close",
+								"bh_tag_content",
+								"bh_unmatched",
+								"bh_unmatched_center",
+								"bh_unmatched_open",
+								"bh_unmatched_close",
+								"bh_unmatched_content"
+							],
+							"color_helper.refresh": true,
+							"color_helper.scan":
+							{
+								"allow_scanning": false,
+								"color_class":
+								[
+									{
+										"class": "css-level-4",
+										"scopes": ""
+									}
+								],
+								"color_trigger": "(?xi)\n(?:\n    \\b(?<![-#&$])(?:\n        color\\((?!\\s*-)|(?:hsla?|(?:ok)?(?:lch|lab)|hwb|rgba?)\\(\n) |\n\\b(?<![-#&$])[\\w]{3,}(?![(-])\\b|(?<![&])\\#)\n",
+								"current_ext": ".rs",
+								"current_syntax": "Rust/Rust",
+								"enabled": true,
+								"last_updated": 1792850016.97,
+								"scanning": "-comment"
+							},
+							"git_gutter_is_enabled": true,
+							"lsp_active": true,
+							"lsp_uri": "file:///Users/voga/projects/rgrp/tests/walk_directories.rs",
+							"show_definitions": false,
+							"syntax": "Packages/Rust/Rust.sublime-syntax",
+							"tab_size": 4,
+							"translate_tabs_to_spaces": true
+						},
+						"translation.x": 0.0,
+						"translation.y": 0.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 1,
+					"stack_multiselect": false,
+					"type": "text"
+				},
+				{
+					"buffer": 4,
+					"file": "src/run.rs",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 2494,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								156,
+								156
+							]
+						],
+						"settings":
+						{
+							"auto_complete_triggers":
+							[
+								{
+									"characters": "<",
+									"selector": "text.html, text.xml"
+								},
+								{
+									"rhs_empty": true,
+									"selector": "punctuation.accessor"
+								},
+								{
+									"characters": ":.'(",
+									"selector": "meta.tag, source - comment - string.quoted.double.block - string.quoted.single.block - string.unquoted.heredoc",
+									"server": "LSP-rust-analyzer"
+								}
+							],
+							"bracket_highlighter.busy": false,
+							"bracket_highlighter.locations":
+							{
+								"close":
+								{
+								},
+								"icon":
+								{
+								},
+								"open":
+								{
+								},
+								"unmatched":
+								{
+								}
+							},
+							"bracket_highlighter.regions":
+							[
+								"bh_angle",
+								"bh_angle_center",
+								"bh_angle_open",
+								"bh_angle_close",
+								"bh_angle_content",
+								"bh_c_define",
+								"bh_c_define_center",
+								"bh_c_define_open",
+								"bh_c_define_close",
+								"bh_c_define_content",
+								"bh_curly",
+								"bh_curly_center",
+								"bh_curly_open",
+								"bh_curly_close",
+								"bh_curly_content",
+								"bh_default",
+								"bh_default_center",
+								"bh_default_open",
+								"bh_default_close",
+								"bh_default_content",
+								"bh_double_quote",
+								"bh_double_quote_center",
+								"bh_double_quote_open",
+								"bh_double_quote_close",
+								"bh_double_quote_content",
+								"bh_regex",
+								"bh_regex_center",
+								"bh_regex_open",
+								"bh_regex_close",
+								"bh_regex_content",
+								"bh_round",
+								"bh_round_center",
+								"bh_round_open",
+								"bh_round_close",
+								"bh_round_content",
+								"bh_single_quote",
+								"bh_single_quote_center",
+								"bh_single_quote_open",
+								"bh_single_quote_close",
+								"bh_single_quote_content",
+								"bh_square",
+								"bh_square_center",
+								"bh_square_open",
+								"bh_square_close",
+								"bh_square_content",
+								"bh_tag",
+								"bh_tag_center",
+								"bh_tag_open",
+								"bh_tag_close",
+								"bh_tag_content",
+								"bh_unmatched",
+								"bh_unmatched_center",
+								"bh_unmatched_open",
+								"bh_unmatched_close",
+								"bh_unmatched_content"
+							],
+							"color_helper.refresh": true,
+							"git_gutter_is_enabled": true,
+							"lsp_active": true,
+							"lsp_uri": "file:///Users/voga/projects/rgrp/src/run.rs",
+							"show_definitions": false,
+							"syntax": "Packages/Rust/Rust.sublime-syntax",
+							"tab_size": 4,
+							"translate_tabs_to_spaces": true
+						},
+						"translation.x": 0.0,
+						"translation.y": 1850.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 4,
 					"stack_multiselect": false,
 					"type": "text"
 				}
@@ -641,7 +1283,7 @@
 	],
 	"incremental_find":
 	{
-		"height": 41.0
+		"height": 43.0
 	},
 	"input":
 	{
@@ -726,11 +1368,25 @@
 		[
 		]
 	},
+	"output.rust_tests":
+	{
+		"height": 290.0,
+		"history":
+		[
+		]
+	},
+	"output.test_lens":
+	{
+		"height": 214.0,
+		"history":
+		[
+		]
+	},
 	"pinned_build_system": "",
 	"project": "rgrp.sublime-project",
 	"replace":
 	{
-		"height": 78.0
+		"height": 82.0
 	},
 	"save_all_on_build": true,
 	"select_file":
@@ -739,6 +1395,18 @@
 		"last_filter": "",
 		"selected_items":
 		[
+			[
+				"run",
+				"src/run.rs"
+			],
+			[
+				"searc",
+				"src/search.rs"
+			],
+			[
+				"wal",
+				"tests/walk_directories.rs"
+			],
 			[
 				"line",
 				"src/line_reader.rs"

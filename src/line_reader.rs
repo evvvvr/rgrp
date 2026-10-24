@@ -1,8 +1,7 @@
-use std::fs::File;
 use std::io;
 use std::io::prelude::*;
 
-const BUFFER_SIZE_BYTES: usize = 6656; // 64 KB
+const BUFFER_SIZE_BYTES: usize = 65536; // 64 KB
 
 #[derive(Debug, PartialEq)]
 pub enum ReadResult {
@@ -10,20 +9,33 @@ pub enum ReadResult {
     BinaryFileSkipped,
 }
 
-pub fn read_file(
-    file_path: &str,
-    skip_on_null: bool,
-    on_line_read: &mut impl FnMut(&[u8]),
-) -> Result<ReadResult, io::Error> {
-    let mut f = File::open(file_path)?;
-    read_lines_from_reader(&mut f, skip_on_null, on_line_read)
+#[derive(Debug)]
+pub enum Error {
+    ReadFailed,
 }
 
-fn read_lines_from_reader<T: Read>(
-    reader: &mut T,
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::ReadFailed => write!(f, "error reading file"),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
+
+impl From<io::Error> for Error {
+    fn from(_: io::Error) -> Self {
+        Error::ReadFailed
+    }
+}
+
+pub fn read_lines(
+    reader: &mut impl Read,
     skip_on_null: bool,
     on_line_read: &mut impl FnMut(&[u8]),
-) -> Result<ReadResult, io::Error> {
+    on_error: &mut impl FnMut(io::Error),
+) -> Result<ReadResult, Error> {
     let mut buffer = [0; BUFFER_SIZE_BYTES];
 
     // Bytes of the line currently being assembled. Lives outside the loop
@@ -31,6 +43,8 @@ fn read_lines_from_reader<T: Read>(
     // ranges into `buffer` alone wouldn't, since `buffer` gets overwritten
     // by the next `read` call.
     let mut line: Vec<u8> = Vec::new();
+
+    let mut had_error = false;
 
     loop {
         let res = reader.read(&mut buffer);
@@ -46,14 +60,18 @@ fn read_lines_from_reader<T: Read>(
                 break;
             }
             Ok(bytes_read) => {
+                if skip_on_null && buffer[..bytes_read].contains(&0) {
+                    // Check the whole chunk for a null byte before handing
+                    // any of its lines to `on_line_read` - otherwise a null
+                    // byte later in the chunk would still let lines earlier
+                    // in the same chunk reach the caller first.
+                    return Ok(ReadResult::BinaryFileSkipped);
+                }
+
                 let mut line_start = 0;
 
                 for current_byte_index in 0..bytes_read {
                     let b = buffer[current_byte_index];
-
-                    if skip_on_null && b == 0 {
-                        return Ok(ReadResult::BinaryFileSkipped);
-                    }
 
                     if b == b'\n' {
                         // everything since the last boundary, up to (not
@@ -70,10 +88,16 @@ fn read_lines_from_reader<T: Read>(
                 // into `line` to be completed by the next read
                 line.extend_from_slice(&buffer[line_start..bytes_read]);
             }
-            Err(_) => {
-                // call on_error
+            Err(err) => {
+                had_error = true;
+                on_error(err);
+                break;
             }
         }
+    }
+
+    if had_error {
+        return Err(Error::ReadFailed);
     }
 
     Ok(ReadResult::FileRead)
@@ -88,7 +112,12 @@ mod tests {
     fn can_read_lines_correctly() {
         let mut lines: Vec<Vec<u8>> = Vec::new();
         let mut input = Cursor::new(b"aa 11\n123 foo\n\nvoga");
-        let res = read_lines_from_reader(&mut input, true, &mut |line| lines.push(line.to_vec()));
+        let res = read_lines(
+            &mut input,
+            true,
+            &mut |line| lines.push(line.to_vec()),
+            &mut |_| {},
+        );
 
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), ReadResult::FileRead);
@@ -107,7 +136,12 @@ mod tests {
 
         let mut lines: Vec<Vec<u8>> = Vec::new();
         let mut input = Cursor::new(input_bytes);
-        let res = read_lines_from_reader(&mut input, false, &mut |line| lines.push(line.to_vec()));
+        let res = read_lines(
+            &mut input,
+            false,
+            &mut |line| lines.push(line.to_vec()),
+            &mut |_| {},
+        );
 
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), ReadResult::FileRead);
@@ -124,7 +158,12 @@ mod tests {
         // "this looks binary, don't search it" outcome
         let mut lines: Vec<Vec<u8>> = Vec::new();
         let mut input = Cursor::new(b"aa 11\x00 bc\nmore\n");
-        let res = read_lines_from_reader(&mut input, true, &mut |line| lines.push(line.to_vec()));
+        let res = read_lines(
+            &mut input,
+            true,
+            &mut |line| lines.push(line.to_vec()),
+            &mut |_| {},
+        );
 
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), ReadResult::BinaryFileSkipped);
@@ -136,20 +175,55 @@ mod tests {
         let mut lines: Vec<Vec<u8>> = Vec::new();
         let mut input = Cursor::new(b"");
 
-        let res = read_lines_from_reader(&mut input, true, &mut |line| lines.push(line.to_vec()));
+        let res = read_lines(
+            &mut input,
+            true,
+            &mut |line| lines.push(line.to_vec()),
+            &mut |_| {},
+        );
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), ReadResult::FileRead);
+        assert!(lines.is_empty());
+    }
+
+    struct AlwaysErrors;
+
+    impl Read for AlwaysErrors {
+        fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::other("boom"))
+        }
+    }
+
+    #[test]
+    fn stops_after_a_read_error_instead_of_looping_forever() {
+        let mut lines: Vec<Vec<u8>> = Vec::new();
+        let mut error_count = 0;
+
+        let res = read_lines(
+            &mut AlwaysErrors,
+            true,
+            &mut |line| lines.push(line.to_vec()),
+            &mut |_| error_count += 1,
+        );
+
+        assert!(res.is_err());
+        assert_eq!(error_count, 1);
         assert!(lines.is_empty());
     }
 
     #[test]
     fn reads_a_single_line_file_withot_newlines() {
         let long_line_len = BUFFER_SIZE_BYTES * 2 + 100;
-        let mut input_bytes = vec![b'x'; long_line_len];
+        let input_bytes = vec![b'x'; long_line_len];
 
         let mut lines: Vec<Vec<u8>> = Vec::new();
         let mut input = Cursor::new(input_bytes);
-        let res = read_lines_from_reader(&mut input, false, &mut |line| lines.push(line.to_vec()));
+        let res = read_lines(
+            &mut input,
+            false,
+            &mut |line| lines.push(line.to_vec()),
+            &mut |_| {},
+        );
 
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), ReadResult::FileRead);

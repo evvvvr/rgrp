@@ -3,7 +3,7 @@ mod common;
 use std::fs;
 
 use common::SharedRecorder;
-use regex::Regex;
+use regex::bytes::Regex;
 use rgrp::concurrency::SharedWorkState;
 use rgrp::search::{self, search};
 use tempfile::tempdir;
@@ -47,6 +47,7 @@ fn finds_matches_in_every_file_of_a_flat_directory() {
         dir.path().to_str().unwrap(),
         &search::Options {
             invert_matches: false,
+            search_binary: false,
         },
         &mut || recorder.printer(),
         &mut |_: search::Error, _: &str| {},
@@ -73,6 +74,7 @@ fn recurses_into_nested_subdirectories() {
         dir.path().to_str().unwrap(),
         &search::Options {
             invert_matches: false,
+            search_binary: false,
         },
         &mut || recorder.printer(),
         &mut |_: search::Error, _: &str| {},
@@ -93,6 +95,7 @@ fn empty_directory_produces_no_matches_and_no_error() {
         dir.path().to_str().unwrap(),
         &search::Options {
             invert_matches: false,
+            search_binary: false,
         },
         &mut || recorder.printer(),
         &mut |_: search::Error, _: &str| {},
@@ -116,6 +119,7 @@ fn single_file_path_is_searched_directly() {
         file.to_str().unwrap(),
         &search::Options {
             invert_matches: false,
+            search_binary: false,
         },
         &mut || recorder.printer(),
         &mut |_: search::Error, _: &str| {},
@@ -137,6 +141,7 @@ fn nonexistent_path_returns_io_error() {
         missing.to_str().unwrap(),
         &search::Options {
             invert_matches: false,
+            search_binary: false,
         },
         &mut || recorder.printer(),
         &mut |_: search::Error, _: &str| {},
@@ -161,6 +166,7 @@ fn symlinks_are_skipped_rather_than_followed() {
         dir.path().to_str().unwrap(),
         &search::Options {
             invert_matches: false,
+            search_binary: false,
         },
         &mut || recorder.printer(),
         &mut |_: search::Error, _: &str| {},
@@ -192,6 +198,7 @@ fn non_utf8_path_is_skipped_without_aborting_the_walk() {
         dir.path().to_str().unwrap(),
         &search::Options {
             invert_matches: false,
+            search_binary: false,
         },
         &mut || recorder.printer(),
         &mut |_: search::Error, _: &str| {},

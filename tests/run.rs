@@ -27,6 +27,7 @@ fn reports_matches_from_good_paths_and_errors_for_bad_ones() {
         ignore_case: false,
         invert_matches: false,
         max_threads: 1,
+        search_binary: false,
     };
 
     let recorder_for_closure = recorder.clone();
@@ -61,6 +62,7 @@ fn succeeds_when_every_path_is_valid() {
         ignore_case: false,
         invert_matches: false,
         max_threads: 1,
+        search_binary: false,
     };
 
     let result = run(
@@ -87,6 +89,7 @@ fn ignore_case_matches_regardless_of_letter_case() {
         ignore_case: true,
         invert_matches: false,
         max_threads: 1,
+        search_binary: false,
     };
 
     let recorder_for_closure = recorder.clone();
@@ -115,6 +118,7 @@ fn without_ignore_case_only_exact_case_matches() {
         ignore_case: false,
         invert_matches: false,
         max_threads: 1,
+        search_binary: false,
     };
 
     let recorder_for_closure = recorder.clone();
@@ -143,6 +147,7 @@ fn invert_match_reports_lines_that_do_not_match() {
         ignore_case: false,
         invert_matches: true,
         max_threads: 1,
+        search_binary: false,
     };
 
     let recorder_for_closure = recorder.clone();

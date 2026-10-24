@@ -1,7 +1,7 @@
-use regex::Regex;
+use crate::line_reader::{ReadResult, read_lines};
+use regex::bytes::Regex;
 use std::fs;
-use std::io::BufRead;
-use std::io::BufReader;
+use std::io::prelude::*;
 
 use crate::printer::Printer;
 
@@ -15,6 +15,8 @@ pub enum Error {
     /// A directory entry's path isn't valid UTF-8, so it's skipped rather
     /// than aborting the rest of the walk.
     NonUtf8Path,
+    /// Reading a file's lines failed partway through.
+    LineRead(crate::line_reader::Error),
 }
 
 impl std::fmt::Display for Error {
@@ -23,6 +25,7 @@ impl std::fmt::Display for Error {
             Error::Io(err) => write!(f, "{err}"),
             Error::Pattern(err) => write!(f, "invalid search pattern: {err}"),
             Error::NonUtf8Path => write!(f, "skipping non-UTF8 path"),
+            Error::LineRead(err) => write!(f, "{err}"),
         }
     }
 }
@@ -41,6 +44,20 @@ impl From<regex::Error> for Error {
     }
 }
 
+/// What happened when searching a single path - lets the caller decide
+/// whether to keep whatever output a printer buffered for it.
+#[derive(Debug, PartialEq)]
+pub enum Outcome {
+    /// Finished normally (including a directory, symlink, or anything
+    /// else that never reached a printer); any buffered output is
+    /// complete and should be kept.
+    Done,
+    /// The file looked binary partway through, so whatever a printer
+    /// already buffered for it only covers lines read before that point -
+    /// incomplete, so it should be discarded rather than shown.
+    BinarySkipped,
+}
+
 /// Knobs that change how a search behaves, independent of the pattern(s)
 /// used or which path is being searched.
 #[derive(Clone, Copy)]
@@ -48,6 +65,9 @@ pub struct Options {
     /// When true, report lines that *don't* match any pattern instead of
     /// lines that do.
     pub invert_matches: bool,
+    /// When true, a file that looks binary is searched as text instead of
+    /// being skipped. Mirrors ripgrep's `-a`/`--text`.
+    pub search_binary: bool,
 }
 
 /// Somewhere a directory's entries can be handed off for someone else to
@@ -72,14 +92,14 @@ pub fn search<T: Printer>(
     printer: &mut T,
     on_error: &mut impl FnMut(Error, &str),
     queue: &impl WorkQueue,
-) -> Result<(), Error> {
+) -> Result<Outcome, Error> {
     // symlink_metadata (unlike metadata) reports the entry's own type instead
     // of following the symlink, so this check actually catches symlinks
     let metadata = fs::symlink_metadata(path)?;
 
     if metadata.is_symlink() {
         // skip for now - this could lead to infinite cycles
-        return Ok(());
+        return Ok(Outcome::Done);
     }
 
     if metadata.is_dir() {
@@ -95,12 +115,12 @@ pub fn search<T: Printer>(
             entries.push(entry_path.to_string());
         }
         queue.enqueue(entries.into_iter());
-        return Ok(());
+        return Ok(Outcome::Done);
     }
 
     if !metadata.is_file() {
         // Something we don't know how to work with
-        return Ok(());
+        return Ok(Outcome::Done);
     }
 
     search_file(patterns, path, options, printer)
@@ -111,69 +131,60 @@ fn search_file<T: Printer>(
     file_path: &str,
     options: &Options,
     printer: &mut T,
-) -> Result<(), Error> {
+) -> Result<Outcome, Error> {
     let file = fs::File::open(file_path)?;
-    search_reader(patterns, file_path, options, BufReader::new(file), printer)
+    search_reader(patterns, file_path, options, file, printer)
 }
 
 fn search_reader<T: Printer>(
     patterns: &[Regex],
     file_path: &str,
     options: &Options,
-    mut reader: impl BufRead,
+    mut reader: impl Read,
     printer: &mut T,
-) -> Result<(), Error> {
-    let mut buf = String::new();
-    let mut line_number = 1;
+) -> Result<Outcome, Error> {
+    let mut line_number: u64 = 1;
 
-    loop {
-        // Binary search
-        // take 64kb bytes chunk from file
-        // if we ignore binaries and theres any NULL byte in chunk - signal that it was binary and skip file
-        // othwrsise, appned to line buffer
-        // once newline or eof encountered - search line versis regexp bytes
-        // semd vec<u8> line to prinetr and use decode_lossy to form results
-        let res = reader.read_line(&mut buf);
+    let mut on_read_line = |line: &[u8]| {
+        // CR LF case
+        let line = line.strip_suffix(b"\r").unwrap_or(line);
 
-        match res {
-            Ok(0) => {
-                // Reached EOF
-                printer.on_eof();
-                return Ok(());
+        let mut all_matches: Vec<regex::bytes::Match> = Vec::new();
+
+        for pattern in patterns {
+            for m in pattern.find_iter(line) {
+                all_matches.push(m);
             }
-            Ok(_) => {
-                let line = buf.trim_end_matches(['\r', '\n']);
-
-                let mut all_matches: Vec<regex::Match> = Vec::new();
-
-                // Make a flat list of matches for all patterns
-                for pattern in patterns {
-                    for m in pattern.find_iter(line) {
-                        all_matches.push(m);
-                    }
-                }
-
-                if options.invert_matches {
-                    // we are interested in lines with zero total matches
-                    if all_matches.is_empty() {
-                        printer.print(file_path, line_number, line, &all_matches);
-                    }
-                } else if !all_matches.is_empty() {
-                    // This allows to walk over all matches for all patterns sequentially
-                    all_matches.sort_by(|a, b| a.start().cmp(&b.start()));
-
-                    printer.print(file_path, line_number, line, &all_matches);
-                }
-            }
-            Err(err) if err.kind() == std::io::ErrorKind::InvalidData => {
-                // non-UTF8 file contents - skip rather than aborting the whole walk
-                return Ok(());
-            }
-            Err(err) => return Err(Error::Io(err)),
         }
 
-        buf.clear();
-        line_number = line_number + 1;
+        if options.invert_matches {
+            // we are interested in lines with zero total matches
+            if all_matches.is_empty() {
+                printer.print(file_path, line_number, line, &all_matches);
+            }
+        } else if !all_matches.is_empty() {
+            // This allows to walk over all matches for all patterns sequentially
+            all_matches.sort_by(|a, b| a.start().cmp(&b.start()));
+
+            printer.print(file_path, line_number, line, &all_matches);
+        }
+
+        line_number += 1;
+    };
+    let res = read_lines(
+        &mut reader,
+        !options.search_binary,
+        &mut on_read_line,
+        &mut |_| {},
+    );
+
+    match res {
+        Ok(ReadResult::FileRead) => {
+            printer.on_eof();
+            Ok(Outcome::Done)
+        }
+        Ok(ReadResult::BinaryFileSkipped) => Ok(Outcome::BinarySkipped),
+        Err(err) => Err(Error::LineRead(err)),
     }
 }
 
@@ -214,13 +225,20 @@ mod tests {
     }
 
     impl Printer for RecordingPrinter {
-        fn print(&mut self, _file_path: &str, line_no: u64, line: &str, matches: &[regex::Match]) {
+        fn print(
+            &mut self,
+            _file_path: &str,
+            line_no: u64,
+            line: &[u8],
+            matches: &[regex::bytes::Match],
+        ) {
             self.print_call_count += 1;
-            self.printed_lines.push(line.to_string());
+            let line = String::from_utf8_lossy(line).into_owned();
+            self.printed_lines.push(line.clone());
             for m in matches {
                 self.matches.push(RecordedMatch {
                     line_no,
-                    line: line.to_string(),
+                    line: line.clone(),
                     match_start: m.start(),
                     match_end: m.end(),
                 });
@@ -242,6 +260,7 @@ mod tests {
             input,
             &Options {
                 invert_matches: false,
+                search_binary: false,
             },
         )
     }
@@ -367,6 +386,7 @@ mod tests {
             "foo\nbar\nfoo bar\nbaz\n",
             &Options {
                 invert_matches: true,
+                search_binary: false,
             },
         );
 
@@ -380,6 +400,7 @@ mod tests {
             "foo\nbar\nfoo bar\nbaz\n",
             &Options {
                 invert_matches: true,
+                search_binary: false,
             },
         );
 
@@ -393,6 +414,7 @@ mod tests {
             "bar\n",
             &Options {
                 invert_matches: true,
+                search_binary: false,
             },
         );
 
