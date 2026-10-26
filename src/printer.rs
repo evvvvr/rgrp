@@ -19,6 +19,13 @@ pub trait Printer {
         line: &[u8],
         matches: &[regex::bytes::Match],
     );
+    fn print_2(
+        &mut self,
+        file_path: &str,
+        line_no: u64,
+        line: &[u8],
+        matches: &[regex::bytes::Match],
+    );
     /// Called once a file has been read to the end. Most printers don't
     /// need this; it exists for ones that need to know when a file is done.
     fn on_eof(&mut self);
@@ -58,6 +65,55 @@ impl Default for ColorPrinter {
 }
 
 impl Printer for ColorPrinter {
+    fn print_2(
+        &mut self,
+        file_path: &str,
+        line_no: u64,
+        line: &[u8],
+        matches: &[regex::bytes::Match],
+    ) {
+        if !self.has_printed_filename {
+            writeln!(self.output).expect("Error writing output");
+            writeln!(self.output, "{}", file_path.bold().purple()).expect("Error writing output");
+            self.has_printed_filename = true;
+        }
+
+        let mut highlighted = String::new();
+        let mut printed_byte_index = 0;
+
+        for m in matches {
+            // Widen the match to whichever whole characters it touches,
+            // rather than decoding each half of a split multi-byte
+            // character on its own - two independent `from_utf8_lossy`
+            // calls on either side of such a split would each see an
+            // incomplete sequence and print a replacement character for
+            // it, turning one character into two mangled ones.
+            let start = snap_start_to_char_boundary(line, m.start()).max(printed_byte_index);
+            let end = snap_end_to_char_boundary(line, m.end());
+
+            if start >= end {
+                // Fully covered by a previous match already printed -
+                // patterns can overlap, and printing this one too would
+                // duplicate that stretch of the line.
+                continue;
+            }
+
+            if start > printed_byte_index {
+                highlighted.push_str(&String::from_utf8_lossy(&line[printed_byte_index..start]));
+            }
+            highlighted.push_str(&String::from_utf8_lossy(&line[start..end]).red().to_string());
+            printed_byte_index = end;
+        }
+
+        if printed_byte_index < line.len() {
+            highlighted.push_str(&String::from_utf8_lossy(&line[printed_byte_index..]));
+        }
+
+        let _ = writeln!(self.output, "{}: {}", line_no.green(), highlighted);
+
+        // println!("print_2");
+    }
+
     fn print(
         &mut self,
         file_path: &Path,
@@ -166,6 +222,22 @@ impl Default for MonochromePrinter {
 }
 
 impl Printer for MonochromePrinter {
+    fn print_2(
+        &mut self,
+        file_path: &str,
+        _line_no: u64,
+        line: &[u8],
+        _matches: &[regex::bytes::Match],
+    ) {
+        writeln!(
+            self.output,
+            "{}: {}",
+            file_path,
+            String::from_utf8_lossy(line)
+        )
+        .expect("Error writing output");
+    }
+
     fn print(
         &mut self,
         file_path: &Path,

@@ -4,11 +4,11 @@ Yet another `grep` rewrite in Rust.
 Just a hobby 100% artisanal hand-coded learning project.
 
 ## To Do:
-- file read optimization with mmap
 - searching inside tars/compressed files
+- follow symlinks (avoid infinite loops)
 - ignoring/specifying search paths/file patterns 
 - multiline matches
-- follow symlinks (avoid infinite loops)
+- file read optimization with mmap
 
 Basically roughly matching ripgrep abilities.
 

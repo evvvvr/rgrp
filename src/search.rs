@@ -1,8 +1,10 @@
 use crate::line_reader::{ReadOptions, ReadResult, read_lines};
+use crate::printer::{BufferedOutput, ColorPrinter};
 use regex::bytes::Regex;
 use std::fs;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 use crate::printer::Printer;
 
@@ -115,6 +117,110 @@ pub fn search<T: Printer>(
     if !metadata.is_file() {
         // Something we don't know how to work with
         return Ok(Outcome::Done);
+    }
+
+    if let Option::Some(extension) = path.extension() {
+        if extension == "zip" {
+            let mut cmd = Command::new("unzip")
+                .arg("-bc")
+                .arg(path)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .spawn()
+                .unwrap();
+
+            let mut child_output = cmd.stdout.take().unwrap();
+
+            let mut current_file_path = String::new();
+            let mut archive_prefixed_file_path = String::new();
+            let mut current_file_line_no = 1;
+            let mut printer = ColorPrinter::new();
+
+            let mut read_line = |line: &[u8]| {
+                if line.starts_with(b"Archive: ") {
+                    // beginning of an archive
+                    // println!("Archive {}", path.to_string_lossy())
+                } else if line.starts_with(b" extracting: ") {
+                    // println!("Extracting: {}",  String::from_utf8_lossy(&line[13..]));
+                } else if line.starts_with(b"  inflating: ") {
+                    let finished_printer = std::mem::replace(&mut printer, ColorPrinter::new());
+                    println!("{}", finished_printer.into_output());
+                    // beginning of file output
+                    current_file_path = String::from_utf8_lossy(&line[13..]).to_string();
+                    current_file_line_no = 1;
+                    archive_prefixed_file_path =
+                        path.to_string_lossy().to_string() + ":" + &current_file_path;
+                    // println!("Inflating: {}",  current_file_path);
+                } else {
+                    current_file_line_no += 1;
+                    let mut all_matches: Vec<regex::bytes::Match> = Vec::new();
+
+                    for pattern in patterns {
+                        for m in pattern.find_iter(line) {
+                            all_matches.push(m);
+                        }
+                    }
+
+                    if options.invert_matches {
+                        // we are interested in lines with zero total matches
+                        if all_matches.is_empty() {
+                            printer.print_2(
+                                &archive_prefixed_file_path,
+                                current_file_line_no,
+                                line,
+                                &all_matches,
+                            );
+                        }
+                    } else if !all_matches.is_empty() {
+                        // This allows to walk over all matches for all patterns sequentially
+                        all_matches.sort_by_key(|a| a.start());
+
+                        printer.print_2(
+                            &archive_prefixed_file_path,
+                            current_file_line_no,
+                            line,
+                            &all_matches,
+                        );
+                        // println!(
+                        //     "{}:{}: {}",
+                        //     path.to_string_lossy(),
+                        //     current_file_path,
+                        //     String::from_utf8_lossy(line)
+                        // )
+                    }
+                }
+            };
+            // Tarballs/ ZIP is a different problem - rougly same dir tree walking applies
+            //  ZIP stdout:
+            //  Archive:  input/node_modules.zip
+            //extracting: ./emil_claims/node_modules/
+            //inflating: ./emil_claims/node_modules/jest-runtime/LICENSE
+            let _ = read_lines(
+                &mut child_output,
+                ReadOptions {
+                    skip_on_null: !options.search_binary,
+                    crlf: options.crlf,
+                },
+                &mut read_line,
+            );
+
+            let _ = cmd.wait();
+        } else if extension == "gz" {
+            // additional check if it's a compressed tarball
+            if let Option::Some(filename) = path.file_stem().unwrap().to_str() {
+                if filename.ends_with(".tar") {
+                    // taraballs are harder to work with:
+                    // tar doesn't  usually outputs filename before file content in stdout
+                    // ssntead it can show entry name in stderr then somehpow it is your job to match
+                    // read stderr
+                    // if it is "x filename" - set current filename
+                    // everuthing in stdout is file ouput until next "x filename"
+                    println!("TAR GZ")
+                } else {
+                    println!("GZ")
+                }
+            }
+        }
     }
 
     search_file(patterns, path, options, printer)
