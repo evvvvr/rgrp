@@ -11,13 +11,7 @@ pub trait Printer {
     /// every match on the line, sorted by start offset, so implementations
     /// can render the whole line in one shot instead of being called once
     /// per match.
-    fn print(
-        &mut self,
-        file_path: &str,
-        line_no: u64,
-        line: &[u8],
-        matches: &[regex::bytes::Match],
-    );
+    fn print(&mut self, file_path: &str, line_no: u64, line: &[u8], matches: &[(usize, usize)]);
 
     /// Called once a file has been read to the end. Most printers don't
     /// need this; it exists for ones that need to know when a file is done.
@@ -58,13 +52,7 @@ impl Default for ColorPrinter {
 }
 
 impl Printer for ColorPrinter {
-    fn print(
-        &mut self,
-        file_path: &str,
-        line_no: u64,
-        line: &[u8],
-        matches: &[regex::bytes::Match],
-    ) {
+    fn print(&mut self, file_path: &str, line_no: u64, line: &[u8], matches: &[(usize, usize)]) {
         if !self.has_printed_filename {
             writeln!(self.output).expect("Error writing output");
             writeln!(self.output, "{}", file_path.bold().purple()).expect("Error writing output");
@@ -81,8 +69,9 @@ impl Printer for ColorPrinter {
             // calls on either side of such a split would each see an
             // incomplete sequence and print a replacement character for
             // it, turning one character into two mangled ones.
-            let start = snap_start_to_char_boundary(line, m.start()).max(printed_byte_index);
-            let end = snap_end_to_char_boundary(line, m.end());
+            let (start, end) = *m;
+            let start = snap_start_to_char_boundary(line, start.max(printed_byte_index));
+            let end = snap_end_to_char_boundary(line, end);
 
             if start >= end {
                 // Fully covered by a previous match already printed -
@@ -165,13 +154,7 @@ impl Default for MonochromePrinter {
 }
 
 impl Printer for MonochromePrinter {
-    fn print(
-        &mut self,
-        file_path: &str,
-        _line_no: u64,
-        line: &[u8],
-        _matches: &[regex::bytes::Match],
-    ) {
+    fn print(&mut self, file_path: &str, _line_no: u64, line: &[u8], _matches: &[(usize, usize)]) {
         writeln!(
             self.output,
             "{}: {}",
