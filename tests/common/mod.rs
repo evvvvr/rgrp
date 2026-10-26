@@ -1,4 +1,3 @@
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use rgrp::printer::{BufferedOutput, Printer};
@@ -55,13 +54,13 @@ pub struct RecordingPrinter(Arc<Mutex<Recorded>>);
 impl Printer for RecordingPrinter {
     fn print(
         &mut self,
-        file_path: &Path,
+        file_path: &str,
         line_no: u64,
         line: &[u8],
         _matches: &[regex::bytes::Match],
     ) {
         self.0.lock().unwrap().matches.push(RecordedMatch {
-            file_path: file_path.to_string_lossy().into_owned(),
+            file_path: file_path.to_owned(),
             line_no,
             line: String::from_utf8_lossy(line).into_owned(),
         });
