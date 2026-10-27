@@ -52,13 +52,7 @@ impl SharedRecorder {
 pub struct RecordingPrinter(Arc<Mutex<Recorded>>);
 
 impl Printer for RecordingPrinter {
-    fn print(
-        &mut self,
-        file_path: &str,
-        line_no: u64,
-        line: &[u8],
-        _matches: &[regex::bytes::Match],
-    ) {
+    fn print(&mut self, file_path: &str, line_no: u64, line: &[u8], _matches: &[(usize, usize)]) {
         self.0.lock().unwrap().matches.push(RecordedMatch {
             file_path: file_path.to_owned(),
             line_no,

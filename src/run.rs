@@ -77,7 +77,7 @@ pub fn run<P: Printer + BufferedOutput>(
         crlf: options.crlf,
     };
 
-    let handle = spawn_workers(
+    spawn_workers(
         SpawnOptions {
             patterns: &patterns,
             files: &options.files,
@@ -85,9 +85,8 @@ pub fn run<P: Printer + BufferedOutput>(
             max_threads: options.max_threads as usize,
         },
         make_printer,
-    );
-
-    handle.consume_with(|output| print!("{output}"), on_error)?;
+    )
+    .consume_with(|output| print!("{output}"), on_error)?;
 
     Ok(())
 }

@@ -126,6 +126,7 @@ pub fn search<T: Printer>(
             // additional check if it's a compressed tarball
             if let Option::Some(filename) = path.file_stem().unwrap().to_str() {
                 if filename.ends_with(".tar") {
+                    // tar -tzvf filename.tgz to print filenames to stderr
                     println!("TAR GZ")
                 } else {
                     println!("GZ")
@@ -241,7 +242,7 @@ fn search_zip<T: Printer>(
 
     let _ = cmd.wait();
 
-    let rez = match res {
+    match res {
         Ok(ReadResult::FileRead) => {
             printer.on_eof();
             Ok(Outcome::Done)
@@ -252,9 +253,7 @@ fn search_zip<T: Printer>(
             Ok(Outcome::BinarySkipped)
         }
         Err(err) => Err(Error::LineRead(err)),
-    };
-
-    return rez;
+    }
 }
 
 fn search_file<T: Printer>(
@@ -352,7 +351,7 @@ mod tests {
             _file_path: &str,
             line_no: u64,
             line: &[u8],
-            matches: &[regex::bytes::Match],
+            matches: &[(usize, usize)],
         ) {
             self.print_call_count += 1;
             let line = String::from_utf8_lossy(line).into_owned();
@@ -361,8 +360,8 @@ mod tests {
                 self.matches.push(RecordedMatch {
                     line_no,
                     line: line.clone(),
-                    match_start: m.start(),
-                    match_end: m.end(),
+                    match_start: m.0,
+                    match_end: m.1,
                 });
             }
         }

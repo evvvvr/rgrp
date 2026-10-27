@@ -206,8 +206,11 @@ mod tests {
 
         let foo = RegexBuilder::new("foo").build().unwrap();
         let oo = RegexBuilder::new("oo").build().unwrap();
-        let matches: Vec<regex::bytes::Match> =
-            foo.find_iter(line).chain(oo.find_iter(line)).collect();
+        let matches: Vec<(usize, usize)> = foo
+            .find_iter(line)
+            .chain(oo.find_iter(line))
+            .map(|m| (m.start(), m.end()))
+            .collect();
 
         printer.print("f", 1, line, &matches);
         let output = strip_ansi(&printer.into_output());
@@ -224,8 +227,11 @@ mod tests {
         // landing the match squarely inside that character.
         let line = [0x61, 0xC3, 0xA9, 0x62];
         let pattern = RegexBuilder::new(r"\xA9").unicode(false).build().unwrap();
-        let matches: Vec<regex::bytes::Match> = pattern.find_iter(&line).collect();
-        assert_eq!((matches[0].start(), matches[0].end()), (2, 3));
+        let matches: Vec<(usize, usize)> = pattern
+            .find_iter(&line)
+            .map(|m| (m.start(), m.end()))
+            .collect();
+        assert_eq!(matches[0], (2, 3));
 
         printer.print("f", 1, &line, &matches);
         let output = strip_ansi(&printer.into_output());
@@ -242,8 +248,11 @@ mod tests {
         // second byte of that 3-byte sequence - squarely mid-character.
         let line = [0x61, 0xE2, 0x82, 0xAC];
         let pattern = RegexBuilder::new(r"\xE2").unicode(false).build().unwrap();
-        let matches: Vec<regex::bytes::Match> = pattern.find_iter(&line).collect();
-        assert_eq!((matches[0].start(), matches[0].end()), (1, 2));
+        let matches: Vec<(usize, usize)> = pattern
+            .find_iter(&line)
+            .map(|m| (m.start(), m.end()))
+            .collect();
+        assert_eq!(matches[0], (1, 2));
 
         printer.print("f", 1, &line, &matches);
         let output = strip_ansi(&printer.into_output());

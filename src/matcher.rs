@@ -29,7 +29,7 @@ pub fn match_line<'a>(
         if all_matches.is_empty() {
             return Option::Some(MatchingLine {
                 line,
-                matches: vec![(0_usize, line.len())],
+                matches: Vec::new(),
             });
         }
     } else if !all_matches.is_empty() {
