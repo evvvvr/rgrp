@@ -1,6 +1,6 @@
 use regex::bytes::Regex;
 use std::fs;
-use std::io::{Cursor, Read};
+use std::io::{self, Read};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -101,17 +101,14 @@ pub(super) fn search_tarball(
             continue;
         }
 
-        // Always pull this member's full byte count off the shared
-        // stream before moving on, regardless of how matching below
-        // goes - otherwise the next member would start reading mid-way
-        // through this one's content instead of at its own boundary.
-        let mut buffer = vec![0u8; entry.size as usize];
-        if child_output.read_exact(&mut buffer).is_err() {
-            had_error = true;
-            break;
-        }
-
         let archive_prefixed_file_path = path.to_string_lossy().to_string() + ":" + &entry.name;
+
+        // Bound to exactly this member's byte count, so `search_reader`
+        // (and the `read_lines` it streams through internally) never
+        // sees past this member's own content, regardless of how large
+        // the member itself is - memory stays bounded by `read_lines`'s
+        // own chunk size, not by the member's size.
+        let mut member_reader = (&mut child_output).take(entry.size);
 
         // `search_reader` flushes this member's output to `emit` itself
         // on a clean finish (or discards it if the member was binary),
@@ -122,10 +119,20 @@ pub(super) fn search_tarball(
             patterns,
             &archive_prefixed_file_path,
             options,
-            Cursor::new(buffer),
+            &mut member_reader,
             printer,
             emit,
         );
+
+        // `search_reader` may have stopped early (e.g. the member
+        // turned out binary), leaving some of this member's bytes still
+        // sitting unread on the shared stream - drain them now, in
+        // small chunks rather than all at once, so the next member
+        // starts reading at its own correct offset.
+        if io::copy(&mut member_reader, &mut io::sink()).is_err() {
+            had_error = true;
+            break;
+        }
 
         if res.is_err() {
             had_error = true;
