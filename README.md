@@ -65,31 +65,92 @@ For parallelism/concurrency:
 
 ## Performance
 
-Rough benchmark against `ripgrep` (`rg`), searching for `"function"` with both
-tools set to ignore `.gitignore` and hidden-file rules and to treat binary
-files as text (`rg --no-ignore --hidden -uu -a`), over a real-world
-`node_modules` directory (~1.2GB, ~58k files), warm filesystem cache:
+Benchmarks against `ripgrep` (`rg`), searching for `"function"` over a
+real-world `node_modules` directory (~1.2GB, ~58k files) and an equivalent
+`node_modules.tar.gz` built from that same tree (292MB compressed, 64,513
+entries), warm filesystem cache, single run each. `rg` is always run with
+`-uu` (`--no-ignore --hidden`), since it respects `.gitignore`/hidden-file
+rules by default and `rgrp` has no such concept at all; otherwise both
+tools are given matching flags on each row.
 
-| | time | CPU usage | lines matched |
-|---|---|---|---|
-| `rgrp` | 2.41s | ~176% (under 2 cores) | 365,844 |
-| `rg` | 1.78s | ~141% (under 1.5 cores) | 368,669 |
+### Directory
 
-`rg` is roughly 35% faster here, and neither tool comes close to saturating
-8 available cores - with this many small files, directory traversal and
-per-file `open`/`read`/`close` syscalls dominate over actual regex matching,
-so this workload is I/O-bound rather than CPU-bound.
+| setting | tool | time | peak RSS | lines matched |
+|---|---|---|---|---|
+| default (skip binary) | `rgrp` | 2.31s | 87.9MB | 365,844 |
+| default (skip binary) | `rg` | 1.74s | 75.8MB | 365,844 |
+| `-a` (binary as text) | `rgrp` | 1.97s | 85.0MB | 368,669 |
+| `-a` (binary as text) | `rg` | 1.69s | 72.8MB | 368,669 |
 
-The remaining ~3k match gap comes down to a small set of binary files
-that only `rg` found matches in. `rgrp` reads each line into a `String` via
-`BufRead::read_line`, which requires valid UTF-8; the moment it hits an
-invalid byte sequence (near the start of these binaries, before any valid
-line has been read), it gives up on that file entirely rather than skipping
-just the bad line. `ripgrep`, by contrast, never requires valid UTF-8 in the
-first place - it reads raw bytes split on `\n` and matches with a
-byte-oriented regex engine, lossily decoding only when it needs to print.
-Beyond those 35 files, the two tools agree almost exactly on which lines
-match, out of ~29,600 files searched in common.
+With matching flags, `rgrp` and `rg` agree exactly on every line matched in
+both configurations. `rg` is consistently faster here by ~15-20%; with ~58k
+mostly-small files, directory traversal and per-file `open`/`read`/`close`
+syscalls dominate over actual regex matching, so this workload is I/O-bound
+rather than CPU-bound, and neither tool comes close to saturating available
+cores.
+
+### Inside an archive (`-z`)
+
+`-z` unpacks zip/tar archives and gzip/bzip2/xz/etc-compressed files instead
+of reading them as opaque binary data:
+
+| setting | tool | time | peak RSS | lines matched |
+|---|---|---|---|---|
+| default (no `-z`) | `rgrp` | 0.00s | 2.8MB | 0 |
+| default (no `-z`) | `rg` | 0.13s | 3.8MB | 0 |
+| `-z` | `rgrp` | 3.17s | 60.0MB | **365,844** |
+| `-z` | `rg` | 0.00s | 4.0MB | 1 † |
+| `-a -z` | `rgrp` | 3.11s | 55.7MB | 368,566 ‡ |
+| `-a -z` | `rg` | 3.43s | 21.8MB | 369,164 § |
+
+† `rg -z` only decompresses a single gzip stream - it has no concept of a
+tar member. The decompressed tar bytes (headers and padding) look binary to
+it, so without `-a` it just prints its own `binary file matches` notice and
+finds nothing real inside. `rgrp -z` fully unpacks the tarball's structure
+and finds every match, each correctly attributed to its own member path.
+
+‡ A few lines short of the clean directory figure (368,669) for reasons not
+yet root-caused - worth investigating further.
+
+§ `rg -a -z` is scanning the raw concatenated tar bytes (headers, padding,
+and every member's content all together) as one flat blob with no file
+boundaries at all, so this number isn't a clean per-member comparison the
+way the directory figures are.
+
+Earlier, `rgrp`'s tar support extracted each member with its own separate
+`tar -xOf` call, which - for a compressed archive - has to decompress from
+the start every time to reach that member: quadratic in the member count.
+For this archive's 64,513 entries, that was on the order of hours,
+estimated from timing a single late-archive extraction rather than run to
+completion. It's a single streaming pass now (`tar -xOf` once, member
+boundaries read from `tar -tvf`'s size column), which is linear - the whole
+`-z` run above, archive included, takes 3.17s.
+
+Peak memory for `-z`/`-a -z` dropped from an initial working version's
+476MB/629MB (which buffered a whole archive's worth of output before
+printing any of it) to the 60MB/56MB above, via two changes: flushing a
+printer's output per archive *member* instead of per whole archive, and
+bounding how much of a single member is ever read into memory at once
+(regardless of how large that member itself is) rather than buffering it
+whole.
+
+### Allocation overhead on dense matches
+
+Both workloads above have modest match density per file, so they don't
+exercise two smaller allocation fixes made along the way: reusing one
+match-offset buffer across every line of a file instead of allocating fresh
+per matching line, and removing a per-match intermediate `String`
+allocation in the colored printer. Isolated on a synthetic 2,000,000-line
+file where every line matches, warm cache, 3 runs each, piped output:
+
+| | before | after |
+|---|---|---|
+| user CPU time | 0.20s (×3) | 0.17-0.18s |
+| peak RSS | ~4.3MB | ~4.3MB (flat) |
+
+A consistent ~10-15% CPU-time reduction on this kind of dense-match file,
+output confirmed byte-identical between both versions. Memory is flat, as
+expected - this is about per-line allocation churn, not peak memory.
 
 ## License
 
