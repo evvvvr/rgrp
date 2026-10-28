@@ -3,8 +3,9 @@
 Yet another `grep` rewrite in Rust.
 Just a hobby 100% artisanal hand-coded learning project.
 
+Allows to search inside tarballs and compressed files.
+
 ## To Do:
-- searching inside tars/compressed files
 - follow symlinks (avoid infinite loops)
 - ignoring/specifying search paths/file patterns 
 - multiline matches
@@ -25,6 +26,29 @@ Basically roughly matching ripgrep abilities.
 
 - `PATH`
   A file or directory to search. Directories are searched recursively. File paths specified explicitly on the command line override glob and ignore rules.
+
+**OPTIONS**
+
+- `-e, --regexp <PATTERN>`
+  A pattern to search for. May be given multiple times to search for several patterns at once. When used, every positional argument is treated as a `PATH` instead of the first one being `PATTERN`.
+
+- `-i, --ignore-case`
+  Match patterns without regard to letter case.
+
+- `-v, --invert-match`
+  Print lines that *don't* match instead of lines that do.
+
+- `-j, --threads <N>`
+  Number of worker threads to use. Defaults to `0`, which picks a count automatically based on available parallelism.
+
+- `-a, --text`
+  Search binary files as if they were text, instead of skipping them (the default).
+
+- `--crlf`
+  Treat `\r\n` as the line terminator instead of just `\n`. By default, a trailing `\r` is kept as part of the line's content rather than stripped as part of the terminator.
+
+- `-z, --search-archives`
+  Search inside zip/tar archives and gzip/bzip2/xz/zstd/etc-compressed files, instead of reading them as opaque binary data (the default, under which they're typically skipped as binary - mirrors ripgrep's `-z`/`--search-zip`). Requires the corresponding external tool (`tar`, `unzip`, `gzip`, `bzip2`, `xz`, `zstd`, `lzip`, `lzma`, `lzop`, `uncompress`) to be installed for whichever archive/compression format is encountered.
 
 
 # How it works

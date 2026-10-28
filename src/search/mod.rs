@@ -3,10 +3,14 @@ use regex::bytes::Regex;
 use std::fs;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 
 use crate::matcher::{Options as MatchOptions, match_line};
 use crate::printer::Printer;
+
+mod classify;
+mod searchers;
+use classify::{FileType, classify};
+use searchers::{search_compressed, search_plain, search_tarball, search_zip};
 
 /// Something that went wrong while walking or reading a single path.
 #[derive(Debug)]
@@ -76,6 +80,12 @@ pub struct Options {
     /// line terminator and stripped, rather than as part of the line
     /// content. Mirrors ripgrep's `--crlf`.
     pub crlf: bool,
+    /// When true, zip/tar archives and gzip/bzip2/xz/etc-compressed files
+    /// are unpacked and searched inside; when false (the default), they're
+    /// read as opaque binary data like any other file - and typically
+    /// skipped as binary, same as ripgrep's default. Mirrors ripgrep's
+    /// `-z`/`--search-zip`.
+    pub search_archives: bool,
 }
 
 /// Somewhere a directory's entries can be handed off for someone else to
@@ -89,214 +99,6 @@ pub trait WorkQueue {
     fn enqueue(&self, paths: impl Iterator<Item = PathBuf>);
 }
 
-// Searcher is: how to check if file mathces and how to search it
-trait Searcher {
-    fn can_handle(&self, path: &Path) -> bool;
-
-    fn search(
-        &self,
-        patterns: &[Regex],
-        path: &Path,
-        options: &Options,
-        printer: &mut dyn Printer,
-    ) -> SearchResult;
-}
-
-struct TarballSearcher {}
-
-impl Searcher for TarballSearcher {
-    fn can_handle(&self, path: &Path) -> bool {
-        // compressed tarball: tgz, tbz, tbz2, txz, tzst, Z, tbz2, .tar.xz,
-        // .tar.zst, .tar.lz, .tar.lzma, .tar.lzo, .tar.Z
-        if let Option::Some(extension) = path.extension() {
-            if extension == "gz" || extension == "bz2" || extension == "bz" {
-                if let Option::Some(filename) = path.file_stem().unwrap().to_str() {
-                    return filename.ends_with(".tar");
-                }
-            }
-        }
-
-        false
-    }
-
-    fn search(
-        &self,
-        patterns: &[Regex],
-        path: &Path,
-        options: &Options,
-        printer: &mut dyn Printer,
-    ) -> SearchResult {
-        let listing = Command::new("tar").arg("-tf").arg(path).output()?;
-        let entry_names: std::collections::VecDeque<String> =
-            String::from_utf8_lossy(&listing.stdout)
-                .lines()
-                .map(|s| s.to_string())
-                .collect();
-
-        let mut results: Vec<SearchResult> = Vec::new();
-        for entry in entry_names {
-            let res = search_compressed_tarball_entry(patterns, path, &entry, options, printer);
-            results.push(res);
-        }
-
-        if results.iter().find(|result| result.is_err()).is_some() {
-            return SearchResult::Err(Error::GenericError);
-        }
-
-        SearchResult::Ok(Outcome::Done)
-    }
-}
-
-struct ZipSearcher {}
-
-impl Searcher for ZipSearcher {
-    fn can_handle(&self, path: &Path) -> bool {
-        if let Option::Some(extension) = path.extension() {
-            return extension.to_ascii_lowercase() == "zip";
-        }
-
-        false
-    }
-
-    fn search(
-        &self,
-        patterns: &[Regex],
-        path: &Path,
-        options: &Options,
-        printer: &mut dyn Printer,
-    ) -> SearchResult {
-        //  ZIP stdout:
-        //  Archive:  input/node_modules.zip
-        //extracting: ./emil_claims/node_modules/
-        //inflating: ./emil_claims/node_modules/jest-runtime/LICENSE
-
-        // `unzip -bc`'s own "extracting:"/"inflating:" progress lines
-        // are not a reliable source for member names: sometimes
-        // the filename unzip writes into that progress line is missing
-        // its first character (a quirk of unzip's own output, not of
-        // how we parse it), and the "extracting:" line (used for
-        // stored/uncompressed members) carries no code path to record a
-        // name at all. `-Z1` gives plain member names, one per line, in
-        // the same order the archive's members are extracted in, so
-        // each progress line here just claims the next one instead of
-        // trying to parse a name out of its own text.
-        let listing = Command::new("unzip").arg("-Z1").arg(path).output()?;
-        let mut member_names: std::collections::VecDeque<String> =
-            String::from_utf8_lossy(&listing.stdout)
-                .lines()
-                .map(|s| s.to_string())
-                .collect();
-
-        let mut cmd = Command::new("unzip")
-            .arg("-bc")
-            .arg(path)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
-
-        let mut child_output = cmd.stdout.take().unwrap();
-
-        let mut current_file_path = String::new();
-        let mut archive_prefixed_file_path = String::new();
-        let mut current_file_line_no = 1;
-        // Whether the member currently being read looks binary - set the
-        // first time one of its lines carries a null byte, and cleared
-        // at the next member boundary. Scoped to the member rather than
-        // the whole archive, so one binary member doesn't silence
-        // matches already found in earlier text members, and checked
-        // without ever stopping the read, so the child's stdout always
-        // keeps draining instead of deadlocking on a full pipe.
-        let mut current_member_is_binary = false;
-
-        let mut read_line = |line: &[u8]| {
-            if line.starts_with(b"Archive: ") {
-                // beginning of an archive
-            } else if line.starts_with(b" extracting: ") || line.starts_with(b"  inflating: ") {
-                printer.on_eof(); // Prev file ended
-                // beginning of file output
-                current_file_path = member_names.pop_front().unwrap_or_default();
-                current_file_line_no = 1;
-                current_member_is_binary = false;
-                archive_prefixed_file_path =
-                    path.to_string_lossy().to_string() + ":" + &current_file_path;
-            } else {
-                current_file_line_no += 1;
-
-                if !options.search_binary && line.contains(&0) {
-                    current_member_is_binary = true;
-                }
-                if current_member_is_binary {
-                    return;
-                }
-
-                if let Some(m) = match_line(
-                    patterns,
-                    &MatchOptions {
-                        invert_matches: options.invert_matches,
-                    },
-                    line,
-                ) {
-                    printer.print(
-                        &archive_prefixed_file_path,
-                        current_file_line_no,
-                        line,
-                        &m.matches,
-                    );
-                }
-            }
-        };
-
-        let res = read_lines(
-            &mut child_output,
-            ReadOptions {
-                // Binary members are skipped individually, by
-                // `current_member_is_binary` above - the read itself
-                // must always run to completion so the child's stdout
-                // keeps draining no matter what any one member
-                // contains.
-                skip_on_null: false,
-                crlf: options.crlf,
-            },
-            &mut read_line,
-        );
-
-        let _ = cmd.wait();
-
-        match res {
-            Ok(ReadResult::FileRead) => {
-                printer.on_eof();
-                Ok(Outcome::Done)
-            }
-            Ok(ReadResult::BinaryFileSkipped) => {
-                // Unreachable with skip_on_null: false above, but kept
-                // for exhaustiveness.
-                Ok(Outcome::BinarySkipped)
-            }
-            Err(err) => Err(Error::LineRead(err)),
-        }
-    }
-}
-
-struct UniversalSearcher {}
-
-impl Searcher for UniversalSearcher {
-    fn can_handle(&self, path: &Path) -> bool {
-        true // We'll try
-    }
-
-    fn search(
-        &self,
-        patterns: &[Regex],
-        path: &Path,
-        options: &Options,
-        printer: &mut dyn Printer,
-    ) -> SearchResult {
-        let file = fs::File::open(path)?;
-        search_reader(patterns, &path.to_string_lossy(), options, file, printer)
-    }
-}
-
 /// Searches one path against `patterns`.
 /// A file is read line by line and matched directly. A directory isn't
 /// recursed into here - its entries are handed to `WorkQueue` for someone to pick up.
@@ -307,10 +109,6 @@ pub fn search(
     printer: &mut dyn Printer,
     queue: &impl WorkQueue,
 ) -> SearchResult {
-    // The order of searches matter here - think middleware
-    let searchers: Vec<&dyn Searcher> = vec![&ZipSearcher {}, &TarballSearcher {}];
-    let universal_searcher = UniversalSearcher {};
-
     // symlink_metadata (unlike metadata) reports the entry's own type instead
     // of following the symlink, so this check actually catches symlinks
     let metadata = fs::symlink_metadata(path)?;
@@ -335,180 +133,16 @@ pub fn search(
         return Ok(Outcome::Done);
     }
 
-    if let Some(searcher) = searchers.iter().find(|searcher| searcher.can_handle(path)) {
-        return searcher.search(patterns, path, options, printer);
+    if !options.search_archives {
+        return search_plain(patterns, path, options, printer);
     }
 
-    universal_searcher.search(patterns, path, options, printer)
-}
-
-fn search_compressed_tarball_entry(
-    patterns: &[Regex],
-    path: &Path,
-    entry: &str,
-    options: &Options,
-    printer: &mut dyn Printer,
-) -> SearchResult {
-    println!("{}", entry);
-    let mut cmd = Command::new("tar")
-        .arg("-xOf")
-        .arg(path)
-        .arg(entry)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-
-    let child_output = cmd.stdout.take().unwrap();
-    let archive_prefixed_file_path = path.to_string_lossy().to_string() + ":" + entry;
-
-    let res = search_reader(
-        patterns,
-        &archive_prefixed_file_path,
-        options,
-        child_output,
-        printer,
-    );
-
-    let _ = cmd.wait();
-
-    printer.on_eof();
-
-    res
-}
-
-fn search_zip<T: Printer>(
-    patterns: &[Regex],
-    path: &Path,
-    options: &Options,
-    printer: &mut T,
-) -> SearchResult {
-    //  ZIP stdout:
-    //  Archive:  input/node_modules.zip
-    //extracting: ./emil_claims/node_modules/
-    //inflating: ./emil_claims/node_modules/jest-runtime/LICENSE
-
-    // `unzip -bc`'s own "extracting:"/"inflating:" progress lines
-    // are not a reliable source for member names: sometimes
-    // the filename unzip writes into that progress line is missing
-    // its first character (a quirk of unzip's own output, not of
-    // how we parse it), and the "extracting:" line (used for
-    // stored/uncompressed members) carries no code path to record a
-    // name at all. `-Z1` gives plain member names, one per line, in
-    // the same order the archive's members are extracted in, so
-    // each progress line here just claims the next one instead of
-    // trying to parse a name out of its own text.
-    let listing = Command::new("unzip").arg("-Z1").arg(path).output()?;
-    let mut member_names: std::collections::VecDeque<String> =
-        String::from_utf8_lossy(&listing.stdout)
-            .lines()
-            .map(|s| s.to_string())
-            .collect();
-
-    let mut cmd = Command::new("unzip")
-        .arg("-bc")
-        .arg(path)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-
-    let mut child_output = cmd.stdout.take().unwrap();
-
-    let mut current_file_path = String::new();
-    let mut archive_prefixed_file_path = String::new();
-    let mut current_file_line_no = 1;
-    // Whether the member currently being read looks binary - set the
-    // first time one of its lines carries a null byte, and cleared
-    // at the next member boundary. Scoped to the member rather than
-    // the whole archive, so one binary member doesn't silence
-    // matches already found in earlier text members, and checked
-    // without ever stopping the read, so the child's stdout always
-    // keeps draining instead of deadlocking on a full pipe.
-    let mut current_member_is_binary = false;
-
-    let mut read_line = |line: &[u8]| {
-        if line.starts_with(b"Archive: ") {
-            // beginning of an archive
-        } else if line.starts_with(b" extracting: ") || line.starts_with(b"  inflating: ") {
-            printer.on_eof(); // Prev file ended
-            // beginning of file output
-            current_file_path = member_names.pop_front().unwrap_or_default();
-            current_file_line_no = 1;
-            current_member_is_binary = false;
-            archive_prefixed_file_path =
-                path.to_string_lossy().to_string() + ":" + &current_file_path;
-        } else {
-            current_file_line_no += 1;
-
-            if !options.search_binary && line.contains(&0) {
-                current_member_is_binary = true;
-            }
-            if current_member_is_binary {
-                return;
-            }
-
-            if let Some(m) = match_line(
-                patterns,
-                &MatchOptions {
-                    invert_matches: options.invert_matches,
-                },
-                line,
-            ) {
-                printer.print(
-                    &archive_prefixed_file_path,
-                    current_file_line_no,
-                    line,
-                    &m.matches,
-                );
-            }
-        }
-    };
-
-    let res = read_lines(
-        &mut child_output,
-        ReadOptions {
-            // Binary members are skipped individually, by
-            // `current_member_is_binary` above - the read itself
-            // must always run to completion so the child's stdout
-            // keeps draining no matter what any one member
-            // contains.
-            skip_on_null: false,
-            crlf: options.crlf,
-        },
-        &mut read_line,
-    );
-
-    let _ = cmd.wait();
-
-    match res {
-        Ok(ReadResult::FileRead) => {
-            printer.on_eof();
-            Ok(Outcome::Done)
-        }
-        Ok(ReadResult::BinaryFileSkipped) => {
-            // Unreachable with skip_on_null: false above, but kept
-            // for exhaustiveness.
-            Ok(Outcome::BinarySkipped)
-        }
-        Err(err) => Err(Error::LineRead(err)),
+    match classify(path) {
+        FileType::Tar => search_tarball(patterns, path, options, printer),
+        FileType::Zip => search_zip(patterns, path, options, printer),
+        FileType::Compressed(format) => search_compressed(patterns, path, options, printer, format),
+        FileType::Plain => search_plain(patterns, path, options, printer),
     }
-}
-
-fn search_file(
-    patterns: &[Regex],
-    file_path: &Path,
-    options: &Options,
-    printer: &mut dyn Printer,
-) -> SearchResult {
-    let file = fs::File::open(file_path)?;
-    search_reader(
-        patterns,
-        &file_path.to_string_lossy(),
-        options,
-        file,
-        printer,
-    )
 }
 
 fn search_reader(
@@ -676,6 +310,7 @@ mod tests {
                 invert_matches: false,
                 search_binary: false,
                 crlf: true,
+                search_archives: false,
             },
         );
         assert_eq!(printer.matches.len(), 2);

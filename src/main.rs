@@ -45,6 +45,12 @@ struct Cli {
     /// (by default, a trailing "\r" is kept as part of the line).
     #[arg(long = "crlf")]
     crlf: bool,
+
+    /// Search inside zip/tar archives and gzip/bzip2/xz/etc-compressed
+    /// files (by default, they're read as opaque binary data like any
+    /// other file, and typically skipped as binary).
+    #[arg(short = 'z', long = "search-archives")]
+    search_archives: bool,
 }
 
 fn parse_options() -> Options {
@@ -73,6 +79,7 @@ fn parse_options() -> Options {
         max_threads: cli.max_threads,
         search_binary: cli.text,
         crlf: cli.crlf,
+        search_archives: cli.search_archives,
     }
 }
 

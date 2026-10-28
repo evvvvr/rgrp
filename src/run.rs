@@ -47,6 +47,10 @@ pub struct Options {
     /// line terminator and stripped, rather than as part of the line
     /// content. Mirrors ripgrep's `--crlf`.
     pub crlf: bool,
+    /// When true, zip/tar archives and gzip/bzip2/xz/etc-compressed files
+    /// are unpacked and searched inside, instead of being read as opaque
+    /// binary data like any other file. Mirrors ripgrep's `-z`/`--search-zip`.
+    pub search_archives: bool,
 }
 
 /// Runs a whole search end to end: compiles the patterns, starts the
@@ -76,6 +80,7 @@ pub fn run<P: Printer + 'static>(
         invert_matches: options.invert_matches,
         search_binary: options.search_binary,
         crlf: options.crlf,
+        search_archives: options.search_archives,
     };
 
     spawn_workers(
