@@ -78,8 +78,36 @@ fn parse_verbose_tar_line(line: &str) -> Option<TarballEntry> {
     })
 }
 
+/// Treats a failed exit status as an error - easy to silently ignore
+/// otherwise (as it was, everywhere, before this), which would mean a
+/// corrupted archive or a decompression failure gets reported as if
+/// nothing had gone wrong, just with less (or no) output found than
+/// there should have been.
+fn check_exit_status(program: &str, status: std::process::ExitStatus) -> Result<(), Error> {
+    if status.success() {
+        return Ok(());
+    }
+    Err(Error::Io(io::Error::other(format!(
+        "`{program}` {status}"
+    ))))
+}
+
+/// Same idea as `check_exit_status`, but tolerates unzip's documented
+/// exit code 1 ("one or more warning errors were found, but processing
+/// completed successfully") instead of treating it as a real failure -
+/// a perfectly fine zip occasionally triggers it for cosmetic reasons
+/// (e.g. a Windows-made archive using backslash path separators)
+/// without anything actually having gone wrong.
+fn check_unzip_exit_status(status: std::process::ExitStatus) -> Result<(), Error> {
+    if status.success() || status.code() == Some(1) {
+        return Ok(());
+    }
+    Err(Error::Io(io::Error::other(format!("`unzip` {status}"))))
+}
+
 fn list_tarball_entries(path: &Path) -> Result<Vec<TarballEntry>, Error> {
     let listing = Command::new("tar").arg("-tvf").arg(path).output()?;
+    check_exit_status("tar", listing.status)?;
     Ok(String::from_utf8_lossy(&listing.stdout)
         .lines()
         .filter_map(parse_verbose_tar_line)
@@ -162,7 +190,10 @@ pub(super) fn search_tarball(
         }
     }
 
-    let _ = cmd.wait();
+    let status = cmd.wait()?;
+    if let Err(err) = check_exit_status("tar", status) {
+        first_error.get_or_insert(err);
+    }
 
     if let Some(err) = first_error {
         return Err(err);
@@ -202,9 +233,12 @@ pub(super) fn search_compressed(
         emit,
     );
 
-    let _ = cmd.wait();
+    let status = cmd.wait()?;
 
-    res
+    res.and_then(|outcome| {
+        check_exit_status(program, status)?;
+        Ok(outcome)
+    })
 }
 
 pub(super) fn search_zip(
@@ -230,6 +264,7 @@ pub(super) fn search_zip(
     // each progress line here just claims the next one instead of
     // trying to parse a name out of its own text.
     let listing = Command::new("unzip").arg("-Z1").arg(path).output()?;
+    check_unzip_exit_status(listing.status)?;
     let mut member_names: std::collections::VecDeque<String> =
         String::from_utf8_lossy(&listing.stdout)
             .lines()
@@ -333,9 +368,9 @@ pub(super) fn search_zip(
         &mut read_line,
     );
 
-    let _ = cmd.wait();
+    let status = cmd.wait()?;
 
-    match res {
+    let outcome = match res {
         Ok(ReadResult::FileRead) => {
             // The last member in the archive never hit another
             // "extracting:"/"inflating:" marker to flush it, so do that
@@ -360,7 +395,12 @@ pub(super) fn search_zip(
             printer.discard();
             Err(Error::LineRead(err))
         }
-    }
+    };
+
+    outcome.and_then(|outcome| {
+        check_unzip_exit_status(status)?;
+        Ok(outcome)
+    })
 }
 
 pub(super) fn search_plain(
