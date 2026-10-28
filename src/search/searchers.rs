@@ -90,11 +90,13 @@ pub(super) fn search_tarball(
         .arg(path)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
+        .spawn()?;
 
-    let mut child_output = cmd.stdout.take().unwrap();
-    let mut had_error = false;
+    let mut child_output = cmd.stdout.take().expect("just configured with Stdio::piped()");
+    // The first error hit, if any - kept (rather than discarded in favor
+    // of a generic placeholder) so the caller finds out what actually
+    // went wrong, not just that something did.
+    let mut first_error: Option<Error> = None;
 
     for entry in entries {
         if entry.size == 0 {
@@ -129,23 +131,23 @@ pub(super) fn search_tarball(
         // sitting unread on the shared stream - drain them now, in
         // small chunks rather than all at once, so the next member
         // starts reading at its own correct offset.
-        if io::copy(&mut member_reader, &mut io::sink()).is_err() {
-            had_error = true;
+        if let Err(drain_err) = io::copy(&mut member_reader, &mut io::sink()) {
+            first_error.get_or_insert(Error::from(drain_err));
             break;
         }
 
-        if res.is_err() {
-            had_error = true;
+        if let Err(err) = res {
+            first_error.get_or_insert(err);
         }
     }
 
     let _ = cmd.wait();
 
-    if had_error {
-        return SearchResult::Err(Error::GenericError);
+    if let Some(err) = first_error {
+        return Err(err);
     }
 
-    SearchResult::Ok(Outcome::Done)
+    Ok(Outcome::Done)
 }
 
 /// A single file compressed on its own (`access.log.gz`, `notes.txt.bz2`,
@@ -166,10 +168,9 @@ pub(super) fn search_compressed(
         .arg(path)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
+        .spawn()?;
 
-    let child_output = cmd.stdout.take().unwrap();
+    let child_output = cmd.stdout.take().expect("just configured with Stdio::piped()");
 
     let res = search_reader(
         patterns,
@@ -219,10 +220,9 @@ pub(super) fn search_zip(
         .arg(path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
+        .spawn()?;
 
-    let mut child_output = cmd.stdout.take().unwrap();
+    let mut child_output = cmd.stdout.take().expect("just configured with Stdio::piped()");
 
     let mut current_file_path = String::new();
     let mut archive_prefixed_file_path = String::new();

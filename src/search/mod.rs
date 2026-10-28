@@ -21,7 +21,12 @@ pub enum Error {
     Pattern(regex::Error),
     /// Reading a file's lines failed partway through.
     LineRead(crate::line_reader::Error),
-    GenericError,
+    /// The worker searching this path panicked (e.g. an external tool
+    /// like `tar`/`unzip`/a decompressor failed to start) - caught at
+    /// the worker-pool level rather than left to unwind, so one path's
+    /// crash can't deadlock every other worker waiting on it to finish,
+    /// or silently vanish without being reported.
+    WorkerPanicked(String),
 }
 
 impl std::fmt::Display for Error {
@@ -30,8 +35,7 @@ impl std::fmt::Display for Error {
             Error::Io(err) => write!(f, "{err}"),
             Error::Pattern(err) => write!(f, "invalid search pattern: {err}"),
             Error::LineRead(err) => write!(f, "{err}"),
-            // TO DO: revisit how we log errors
-            Error::GenericError => todo!(),
+            Error::WorkerPanicked(message) => write!(f, "panicked: {message}"),
         }
     }
 }

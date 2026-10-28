@@ -1,5 +1,6 @@
 use crossbeam::queue::SegQueue;
 use regex::bytes::Regex;
+use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::Receiver;
@@ -176,26 +177,43 @@ pub fn spawn_workers(
                     .fetch_add(1, Ordering::AcqRel);
                 drop(guard);
 
-                let mut printer = make_printer();
-                let mut emit = |output: String| {
-                    let _ = output_tx.send(Result::Ok(output));
-                };
+                // Caught rather than left to unwind: a panic anywhere in
+                // here (e.g. an external tool failing to start) would
+                // otherwise skip the pending_work_counter decrement
+                // below, permanently wedging every other worker's
+                // `wait_while` - the queue would look done (empty) but
+                // never actually report as such, hanging the whole
+                // program even after all other real work finished.
+                let search_result = panic::catch_unwind(AssertUnwindSafe(|| {
+                    let mut printer = make_printer();
+                    let mut emit = |output: String| {
+                        let _ = output_tx.send(Result::Ok(output));
+                    };
 
-                let res = search(
-                    &patterns,
-                    &path,
-                    &search_options,
-                    &mut *printer,
-                    &*shared_state,
-                    &mut emit,
-                );
+                    search(
+                        &patterns,
+                        &path,
+                        &search_options,
+                        &mut *printer,
+                        &*shared_state,
+                        &mut emit,
+                    )
+                }));
 
                 // On success, every bit of output - whether this path was
                 // a single plain file or an archive with many members -
                 // was already sent to `emit` as each one finished, so
                 // there's nothing left to do here but report an error.
-                if let Err(err) = res {
-                    let _ = output_tx.send(Result::Err((err, path)));
+                match search_result {
+                    Ok(Ok(_outcome)) => {}
+                    Ok(Err(err)) => {
+                        let _ = output_tx.send(Result::Err((err, path)));
+                    }
+                    Err(panic_payload) => {
+                        let message = panic_message(&panic_payload);
+                        let _ = output_tx
+                            .send(Result::Err((SearchError::WorkerPanicked(message), path)));
+                    }
                 }
 
                 shared_state
@@ -212,4 +230,19 @@ pub fn spawn_workers(
     drop(output_tx);
 
     WorkersHandle { threads, output_rx }
+}
+
+/// Pulls a human-readable message out of a caught panic's payload - most
+/// panics (including every `.unwrap()`/`.expect()` in this codebase)
+/// carry either a `&'static str` or a `String`; anything else (a custom
+/// payload from `panic_any`, which nothing here uses) falls back to a
+/// generic message rather than failing to report the panic at all.
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        message.to_string()
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "unknown panic".to_string()
+    }
 }

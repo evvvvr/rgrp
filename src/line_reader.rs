@@ -116,7 +116,6 @@ pub fn read_lines(
                 line.extend_from_slice(&buffer[line_start..bytes_read]);
             }
             Err(err) => {
-                println!("!!!ERROR!!!");
                 return Err(Error::ReadFailed(err));
             }
         }
