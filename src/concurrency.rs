@@ -7,7 +7,7 @@ use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
 
 use crate::printer::Printer;
-use crate::search::{Error as SearchError, Options as SearchOptions, Outcome, WorkQueue, search};
+use crate::search::{Error as SearchError, Options as SearchOptions, WorkQueue, search};
 
 /// The state every worker thread shares while walking a search: the queue
 /// of paths still to process, and the bookkeeping that lets workers agree
@@ -177,6 +177,9 @@ pub fn spawn_workers(
                 drop(guard);
 
                 let mut printer = make_printer();
+                let mut emit = |output: String| {
+                    let _ = output_tx.send(Result::Ok(output));
+                };
 
                 let res = search(
                     &patterns,
@@ -184,19 +187,15 @@ pub fn spawn_workers(
                     &search_options,
                     &mut *printer,
                     &*shared_state,
+                    &mut emit,
                 );
 
-                match res {
-                    Ok(Outcome::Done) => {
-                        let output = printer.into_output();
-                        if !output.is_empty() {
-                            let _ = output_tx.send(Result::Ok(output));
-                        }
-                    }
-                    Ok(Outcome::BinarySkipped) => {}
-                    Err(err) => {
-                        let _ = output_tx.send(Result::Err((err, path)));
-                    }
+                // On success, every bit of output - whether this path was
+                // a single plain file or an archive with many members -
+                // was already sent to `emit` as each one finished, so
+                // there's nothing left to do here but report an error.
+                if let Err(err) = res {
+                    let _ = output_tx.send(Result::Err((err, path)));
                 }
 
                 shared_state

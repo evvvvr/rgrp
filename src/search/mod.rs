@@ -108,6 +108,7 @@ pub fn search(
     options: &Options,
     printer: &mut dyn Printer,
     queue: &impl WorkQueue,
+    emit: &mut dyn FnMut(String),
 ) -> SearchResult {
     // symlink_metadata (unlike metadata) reports the entry's own type instead
     // of following the symlink, so this check actually catches symlinks
@@ -134,23 +135,31 @@ pub fn search(
     }
 
     if !options.search_archives {
-        return search_plain(patterns, path, options, printer);
+        return search_plain(patterns, path, options, printer, emit);
     }
 
     match classify(path) {
-        FileType::Tar => search_tarball(patterns, path, options, printer),
-        FileType::Zip => search_zip(patterns, path, options, printer),
-        FileType::Compressed(format) => search_compressed(patterns, path, options, printer, format),
-        FileType::Plain => search_plain(patterns, path, options, printer),
+        FileType::Tar => search_tarball(patterns, path, options, printer, emit),
+        FileType::Zip => search_zip(patterns, path, options, printer, emit),
+        FileType::Compressed(format) => {
+            search_compressed(patterns, path, options, printer, format, emit)
+        }
+        FileType::Plain => search_plain(patterns, path, options, printer, emit),
     }
 }
 
+/// Reads one logical file's worth of lines (a whole plain file, or one
+/// member of an archive) and matches them against `patterns`. On a clean
+/// finish, flushes whatever `printer` buffered for it straight to `emit` -
+/// so a caller looping over many members (an archive) gets each one's
+/// output as it finishes rather than having to wait for all of them.
 fn search_reader(
     patterns: &[Regex],
     file_path: &str,
     options: &Options,
     mut reader: impl Read,
     printer: &mut dyn Printer,
+    emit: &mut dyn FnMut(String),
 ) -> Result<Outcome, Error> {
     let mut line_number: u64 = 1;
 
@@ -179,11 +188,20 @@ fn search_reader(
 
     match res {
         Ok(ReadResult::FileRead) => {
-            printer.on_eof();
+            let output = printer.flush();
+            if !output.is_empty() {
+                emit(output);
+            }
             Ok(Outcome::Done)
         }
-        Ok(ReadResult::BinaryFileSkipped) => Ok(Outcome::BinarySkipped),
-        Err(err) => Err(Error::LineRead(err)),
+        Ok(ReadResult::BinaryFileSkipped) => {
+            printer.discard();
+            Ok(Outcome::BinarySkipped)
+        }
+        Err(err) => {
+            printer.discard();
+            Err(Error::LineRead(err))
+        }
     }
 }
 
@@ -244,13 +262,12 @@ mod tests {
             }
         }
 
-        fn on_eof(&mut self) {
+        fn flush(&mut self) -> String {
             self.eof_count += 1;
-        }
-
-        fn into_output(self: Box<Self>) -> String {
             String::new()
         }
+
+        fn discard(&mut self) {}
     }
 
     fn run_reader(pattern: &str, input: &str) -> RecordingPrinter {
@@ -281,6 +298,7 @@ mod tests {
             options,
             Cursor::new(input.as_bytes()),
             &mut printer,
+            &mut |_| {},
         )
         .unwrap();
         printer

@@ -21,7 +21,14 @@ fn walk(
     let shared_state = SharedWorkState::new(&[root.to_path_buf()]);
     while let Some(path) = shared_state.work_queue.pop() {
         let mut printer = make_printer();
-        search(patterns, &path, options, &mut printer, &shared_state)?;
+        search(
+            patterns,
+            &path,
+            options,
+            &mut printer,
+            &shared_state,
+            &mut |_| {},
+        )?;
     }
     Ok(())
 }

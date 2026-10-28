@@ -13,20 +13,18 @@ pub trait Printer: Send + Sync {
     /// per match.
     fn print(&mut self, file_path: &str, line_no: u64, line: &[u8], matches: &[(usize, usize)]);
 
-    /// Called once a file has been read to the end. Most printers don't
-    /// need this; it exists for ones that need to know when a file is done.
-    fn on_eof(&mut self);
+    /// Called once a file (or one member of an archive) has been read to
+    /// the end cleanly - takes and returns everything buffered for it
+    /// since the last `flush`/`discard`, so the caller can emit that
+    /// chunk right away instead of holding it until an entire archive of
+    /// many members is done.
+    fn flush(&mut self) -> String;
 
-    fn into_output(self: Box<Self>) -> String;
-}
-
-/// A printer that builds up its output in memory instead of writing it as
-/// it goes, so the caller can collect a whole file's worth of output and
-/// print it as one piece - keeping multiple threads' output from
-/// interleaving mid-file.
-pub trait BufferedOutput {
-    /// Consumes the printer and returns everything it has buffered so far.
-    fn into_output(self) -> String;
+    /// Called when a file (or archive member) turned out to be binary
+    /// partway through, or failed to read - clears whatever was buffered
+    /// for it instead of returning it, since it's incomplete and
+    /// shouldn't be shown.
+    fn discard(&mut self);
 }
 
 /// Renders matches with ANSI colors (filename in purple/bold, matched text
@@ -96,12 +94,14 @@ impl Printer for ColorPrinter {
         let _ = writeln!(self.output, "{}: {}", line_no.green(), highlighted);
     }
 
-    fn on_eof(&mut self) {
+    fn flush(&mut self) -> String {
         self.has_printed_filename = false;
+        std::mem::take(&mut self.output)
     }
 
-    fn into_output(self: Box<Self>) -> String {
-        self.output
+    fn discard(&mut self) {
+        self.has_printed_filename = false;
+        self.output.clear();
     }
 }
 
@@ -131,12 +131,6 @@ fn snap_end_to_char_boundary(line: &[u8], mut idx: usize) -> usize {
     }
     idx
 }
-
-// impl BufferedOutput for ColorPrinter {
-//     fn into_output(self) -> String {
-//         self.output
-//     }
-// }
 
 /// Renders matches as plain `path: line` text, no color codes - for
 /// output that isn't going to a terminal (piped to a file, `NO_COLOR`, etc.).
@@ -170,20 +164,14 @@ impl Printer for MonochromePrinter {
         .expect("Error writing output");
     }
 
-    fn on_eof(&mut self) {
-        // nop
+    fn flush(&mut self) -> String {
+        std::mem::take(&mut self.output)
     }
 
-    fn into_output(self: Box<Self>) -> String {
-        self.output
+    fn discard(&mut self) {
+        self.output.clear();
     }
 }
-
-// impl BufferedOutput for MonochromePrinter {
-//     fn into_output(self) -> String {
-//         self.output
-//     }
-// }
 
 #[cfg(test)]
 mod tests {
@@ -223,7 +211,7 @@ mod tests {
             .collect();
 
         printer.print("f", 1, line, &matches);
-        let output = strip_ansi(&Box::new(printer).into_output());
+        let output = strip_ansi(&printer.flush());
 
         assert!(output.contains("foo bar"));
         assert!(!output.contains("foooo"));
@@ -244,7 +232,7 @@ mod tests {
         assert_eq!(matches[0], (2, 3));
 
         printer.print("f", 1, &line, &matches);
-        let output = strip_ansi(&Box::new(printer).into_output());
+        let output = strip_ansi(&printer.flush());
 
         assert_eq!(output.matches('\u{FFFD}').count(), 0);
         assert!(output.contains("aéb"));
@@ -265,12 +253,34 @@ mod tests {
         assert_eq!(matches[0], (1, 2));
 
         printer.print("f", 1, &line, &matches);
-        let output = strip_ansi(&Box::new(printer).into_output());
+        let output = strip_ansi(&printer.flush());
 
         // The whole character must survive, highlighted as one unit,
         // instead of the match being silently dropped by an end boundary
         // that snapped backward past the start.
         assert_eq!(output.matches('\u{FFFD}').count(), 0);
         assert!(output.contains("a€"));
+    }
+
+    #[test]
+    fn discard_clears_buffered_output_without_returning_it() {
+        let mut printer = ColorPrinter::new();
+        printer.print("f", 1, b"foo", &[(0, 3)]);
+
+        printer.discard();
+
+        assert_eq!(printer.flush(), "");
+    }
+
+    #[test]
+    fn flush_resets_state_so_the_next_file_prints_its_own_filename_header() {
+        let mut printer = ColorPrinter::new();
+        printer.print("first", 1, b"foo", &[(0, 3)]);
+        printer.flush();
+
+        printer.print("second", 1, b"foo", &[(0, 3)]);
+        let output = strip_ansi(&printer.flush());
+
+        assert!(output.contains("second"));
     }
 }

@@ -81,6 +81,7 @@ pub(super) fn search_tarball(
     path: &Path,
     options: &Options,
     printer: &mut dyn Printer,
+    emit: &mut dyn FnMut(String),
 ) -> SearchResult {
     let entries = list_tarball_entries(path)?;
 
@@ -112,15 +113,19 @@ pub(super) fn search_tarball(
 
         let archive_prefixed_file_path = path.to_string_lossy().to_string() + ":" + &entry.name;
 
+        // `search_reader` flushes this member's output to `emit` itself
+        // on a clean finish (or discards it if the member was binary),
+        // so each member's share of the archive's output is sent on as
+        // soon as it's done instead of accumulating for the whole
+        // archive.
         let res = search_reader(
             patterns,
             &archive_prefixed_file_path,
             options,
             Cursor::new(buffer),
             printer,
+            emit,
         );
-
-        printer.on_eof();
 
         if res.is_err() {
             had_error = true;
@@ -145,6 +150,7 @@ pub(super) fn search_compressed(
     options: &Options,
     printer: &mut dyn Printer,
     format: CompressionFormat,
+    emit: &mut dyn FnMut(String),
 ) -> SearchResult {
     let (program, flag) = format.decompressor();
 
@@ -164,6 +170,7 @@ pub(super) fn search_compressed(
         options,
         child_output,
         printer,
+        emit,
     );
 
     let _ = cmd.wait();
@@ -176,6 +183,7 @@ pub(super) fn search_zip(
     path: &Path,
     options: &Options,
     printer: &mut dyn Printer,
+    emit: &mut dyn FnMut(String),
 ) -> SearchResult {
     //  ZIP stdout:
     //  Archive:  input/node_modules.zip
@@ -225,7 +233,17 @@ pub(super) fn search_zip(
         if line.starts_with(b"Archive: ") {
             // beginning of an archive
         } else if line.starts_with(b" extracting: ") || line.starts_with(b"  inflating: ") {
-            printer.on_eof(); // Prev file ended
+            // Previous member ended - flush its output, unless it turned
+            // out to be binary, in which case discard whatever partial
+            // output it buffered before that was detected.
+            if current_member_is_binary {
+                printer.discard();
+            } else {
+                let output = printer.flush();
+                if !output.is_empty() {
+                    emit(output);
+                }
+            }
             // beginning of file output
             current_file_path = member_names.pop_front().unwrap_or_default();
             current_file_line_no = 1;
@@ -277,15 +295,29 @@ pub(super) fn search_zip(
 
     match res {
         Ok(ReadResult::FileRead) => {
-            printer.on_eof();
+            // The last member in the archive never hit another
+            // "extracting:"/"inflating:" marker to flush it, so do that
+            // here instead.
+            if current_member_is_binary {
+                printer.discard();
+            } else {
+                let output = printer.flush();
+                if !output.is_empty() {
+                    emit(output);
+                }
+            }
             Ok(Outcome::Done)
         }
         Ok(ReadResult::BinaryFileSkipped) => {
             // Unreachable with skip_on_null: false above, but kept
             // for exhaustiveness.
+            printer.discard();
             Ok(Outcome::BinarySkipped)
         }
-        Err(err) => Err(Error::LineRead(err)),
+        Err(err) => {
+            printer.discard();
+            Err(Error::LineRead(err))
+        }
     }
 }
 
@@ -294,9 +326,17 @@ pub(super) fn search_plain(
     path: &Path,
     options: &Options,
     printer: &mut dyn Printer,
+    emit: &mut dyn FnMut(String),
 ) -> SearchResult {
     let file = fs::File::open(path)?;
-    search_reader(patterns, &path.to_string_lossy(), options, file, printer)
+    search_reader(
+        patterns,
+        &path.to_string_lossy(),
+        options,
+        file,
+        printer,
+        emit,
+    )
 }
 
 #[cfg(test)]

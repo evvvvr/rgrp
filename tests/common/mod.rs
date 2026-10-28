@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use rgrp::printer::{BufferedOutput, Printer};
+use rgrp::printer::Printer;
 
 #[derive(Clone)]
 #[allow(dead_code)] // fields are read by some test binaries but not others
@@ -60,19 +60,13 @@ impl Printer for RecordingPrinter {
         });
     }
 
-    fn on_eof(&mut self) {
+    fn flush(&mut self) -> String {
         self.0.lock().unwrap().eof_count += 1;
-    }
-
-    fn into_output(self: Box<Self>) -> String {
-        String::new()
-    }
-}
-
-impl BufferedOutput for RecordingPrinter {
-    fn into_output(self) -> String {
         // RecordingPrinter records structured matches directly into the
-        // shared recorder rather than producing printable text.
+        // shared recorder at `print` time rather than producing printable
+        // text, so there's nothing buffered here to hand back.
         String::new()
     }
+
+    fn discard(&mut self) {}
 }
