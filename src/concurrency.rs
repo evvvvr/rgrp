@@ -169,7 +169,15 @@ pub fn spawn_workers(
     // where Ctrl-C during the test run isn't a scenario worth handling.
     let cancel_state = Arc::clone(&shared_state);
     let _ = ctrlc::set_handler(move || {
-        cancel_state.cancelled.store(true, Ordering::Release);
+        // `swap` reports whether cancellation had already been
+        // requested - a second Ctrl-C while workers are still finishing
+        // their in-flight paths means "stop now", not "finish what
+        // you're doing first", so this skips the graceful path entirely
+        // on the second (and every further) press.
+        if cancel_state.cancelled.swap(true, Ordering::AcqRel) {
+            eprintln!("rgrp: second interrupt, exiting immediately");
+            std::process::exit(130);
+        }
         // Wake every worker currently parked in `wait_while` - without
         // this, one with nothing left in the queue but another still
         // "in flight" would otherwise keep waiting for a notify that
