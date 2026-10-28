@@ -15,6 +15,9 @@ regex = "1.13.1"
 tempfile = "3.23.0"
 
 [profile.release]
+# 3 is already cargo's own default for the release profile - set
+# explicitly so it's visible here rather than relying on that default.
+opt-level = 3
 # Debug symbols aren't needed in the shipped binary - panic messages are
 # plain strings, not symbol-table lookups, so this doesn't affect them.
 strip = true
