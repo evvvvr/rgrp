@@ -1,5 +1,6 @@
 use regex::bytes::Regex;
 use std::fs;
+use std::io::{Cursor, Read};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -10,63 +11,129 @@ use crate::printer::Printer;
 use super::classify::CompressionFormat;
 use super::{Error, Options, Outcome, SearchResult, search_reader};
 
+/// One member of a tarball, as reported by `tar -tvf`'s verbose listing.
+struct TarballEntry {
+    name: String,
+    /// How many content bytes this member contributes to `tar -xOf`'s
+    /// single concatenated stdout stream - `0` for anything without
+    /// content of its own (directories, symlinks, ...).
+    size: u64,
+}
+
+/// Parses one line of `tar -tvf`'s verbose listing, e.g.:
+/// `-rw-r--r--  0 user  staff  1234 Aug 27 2025 some/path.txt`
+///
+/// This is bsdtar's column layout (permissions, links, owner, group,
+/// size, month, day, time-or-year, then the name - which may itself
+/// contain spaces, so it's whatever's left after those 8 fixed fields).
+/// GNU tar's verbose listing combines owner/group into a single
+/// `user/group` field instead, which this does not account for.
+fn parse_verbose_tar_line(line: &str) -> Option<TarballEntry> {
+    let mut fields = line.split_whitespace();
+
+    // Only a regular file ('-') ever contributes bytes to `tar -xOf`'s
+    // output - directories, symlinks, and other special types always
+    // produce zero, regardless of what their own size field says (e.g. a
+    // symlink's "size" is the length of its target string, not content
+    // `tar -xOf` will ever emit).
+    let is_regular_file = fields.next()?.starts_with('-');
+
+    let _links = fields.next()?;
+    let _owner = fields.next()?;
+    let _group = fields.next()?;
+    let size: u64 = fields.next()?.parse().ok()?;
+    let _month = fields.next()?;
+    let _day = fields.next()?;
+    let _time_or_year = fields.next()?;
+
+    let name: String = fields.collect::<Vec<_>>().join(" ");
+    if name.is_empty() {
+        return None;
+    }
+
+    Some(TarballEntry {
+        name,
+        size: if is_regular_file { size } else { 0 },
+    })
+}
+
+fn list_tarball_entries(path: &Path) -> Result<Vec<TarballEntry>, Error> {
+    let listing = Command::new("tar").arg("-tvf").arg(path).output()?;
+    Ok(String::from_utf8_lossy(&listing.stdout)
+        .lines()
+        .filter_map(parse_verbose_tar_line)
+        .collect())
+}
+
+/// Searches every member of a tarball in one single pass: one `tar`
+/// process decompresses and extracts the whole archive once, with every
+/// member's content concatenated onto its stdout in archive order, and
+/// this reads each member's exact byte count (from `list_tarball_entries`)
+/// off that one shared stream before moving to the next.
+///
+/// Earlier, each member was extracted by its own separate `tar -xOf`
+/// call, which - for a compressed archive - has to decompress from the
+/// start every time to reach that member; across many thousands of
+/// members, that's effectively quadratic in the archive's member count.
+/// Reading everything out of one streaming pass instead is linear.
 pub(super) fn search_tarball(
     patterns: &[Regex],
     path: &Path,
     options: &Options,
     printer: &mut dyn Printer,
 ) -> SearchResult {
-    let listing = Command::new("tar").arg("-tf").arg(path).output()?;
-    let entry_names: std::collections::VecDeque<String> = String::from_utf8_lossy(&listing.stdout)
-        .lines()
-        .map(|s| s.to_string())
-        .collect();
+    let entries = list_tarball_entries(path)?;
 
-    let mut results: Vec<SearchResult> = Vec::new();
-    for entry in entry_names {
-        let res = search_compressed_tarball_entry(patterns, path, &entry, options, printer);
-        results.push(res);
-    }
-
-    if results.iter().any(|result| result.is_err()) {
-        return SearchResult::Err(Error::GenericError);
-    }
-
-    SearchResult::Ok(Outcome::Done)
-}
-
-fn search_compressed_tarball_entry(
-    patterns: &[Regex],
-    path: &Path,
-    entry: &str,
-    options: &Options,
-    printer: &mut dyn Printer,
-) -> SearchResult {
     let mut cmd = Command::new("tar")
         .arg("-xOf")
         .arg(path)
-        .arg(entry)
-        .stdin(Stdio::piped())
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
 
-    let child_output = cmd.stdout.take().unwrap();
-    let archive_prefixed_file_path = path.to_string_lossy().to_string() + ":" + entry;
+    let mut child_output = cmd.stdout.take().unwrap();
+    let mut had_error = false;
 
-    let res = search_reader(
-        patterns,
-        &archive_prefixed_file_path,
-        options,
-        child_output,
-        printer,
-    );
+    for entry in entries {
+        if entry.size == 0 {
+            continue;
+        }
+
+        // Always pull this member's full byte count off the shared
+        // stream before moving on, regardless of how matching below
+        // goes - otherwise the next member would start reading mid-way
+        // through this one's content instead of at its own boundary.
+        let mut buffer = vec![0u8; entry.size as usize];
+        if child_output.read_exact(&mut buffer).is_err() {
+            had_error = true;
+            break;
+        }
+
+        let archive_prefixed_file_path = path.to_string_lossy().to_string() + ":" + &entry.name;
+
+        let res = search_reader(
+            patterns,
+            &archive_prefixed_file_path,
+            options,
+            Cursor::new(buffer),
+            printer,
+        );
+
+        printer.on_eof();
+
+        if res.is_err() {
+            had_error = true;
+        }
+    }
 
     let _ = cmd.wait();
 
-    printer.on_eof();
+    if had_error {
+        return SearchResult::Err(Error::GenericError);
+    }
 
-    res
+    SearchResult::Ok(Outcome::Done)
 }
 
 /// A single file compressed on its own (`access.log.gz`, `notes.txt.bz2`,
@@ -230,4 +297,51 @@ pub(super) fn search_plain(
 ) -> SearchResult {
     let file = fs::File::open(path)?;
     search_reader(patterns, &path.to_string_lossy(), options, file, printer)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_a_regular_file_line() {
+        let entry =
+            parse_verbose_tar_line("-rw-r--r--  0 voga   staff  786671 Aug 27  2025 node_modules/.package-lock.json")
+                .unwrap();
+        assert_eq!(entry.name, "node_modules/.package-lock.json");
+        assert_eq!(entry.size, 786671);
+    }
+
+    #[test]
+    fn parses_a_file_name_with_spaces() {
+        let entry =
+            parse_verbose_tar_line("-rw-r--r--  0 voga   staff     123 Aug 27  2025 some dir/a file.txt")
+                .unwrap();
+        assert_eq!(entry.name, "some dir/a file.txt");
+        assert_eq!(entry.size, 123);
+    }
+
+    #[test]
+    fn a_directory_always_has_zero_size_regardless_of_its_listed_size() {
+        let entry =
+            parse_verbose_tar_line("drwxr-xr-x  0 voga   staff       0 Aug 27  2025 node_modules/")
+                .unwrap();
+        assert_eq!(entry.name, "node_modules/");
+        assert_eq!(entry.size, 0);
+    }
+
+    #[test]
+    fn a_symlink_always_has_zero_size_even_though_its_listed_size_is_its_target_length() {
+        let entry = parse_verbose_tar_line(
+            "lrwxr-xr-x  0 voga   staff      20 Aug 26  2025 node_modules/some-link -> ../apps/some-app",
+        )
+        .unwrap();
+        assert_eq!(entry.size, 0);
+    }
+
+    #[test]
+    fn an_unparseable_line_is_skipped() {
+        assert!(parse_verbose_tar_line("").is_none());
+        assert!(parse_verbose_tar_line("not a tar listing line").is_none());
+    }
 }
