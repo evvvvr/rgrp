@@ -2,7 +2,7 @@ use crossbeam::queue::SegQueue;
 use regex::bytes::Regex;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
@@ -27,6 +27,12 @@ pub struct SharedWorkState {
     pub condition: Condvar,
     /// Paired with `condition`; holds no real data of its own.
     pub condition_guard: Mutex<()>,
+    /// Set once (by a Ctrl-C handler) to ask every worker to stop picking
+    /// up new work - whatever each worker is already in the middle of
+    /// still runs to completion (so its output is still reported and its
+    /// spawned external processes still get reaped), but none of them
+    /// pop another path off the queue afterward.
+    pub cancelled: AtomicBool,
 }
 
 impl SharedWorkState {
@@ -44,6 +50,7 @@ impl SharedWorkState {
             pending_work_counter: AtomicUsize::new(0),
             condition: Condvar::new(),
             condition_guard: Mutex::new(()),
+            cancelled: AtomicBool::new(false),
         }
     }
 }
@@ -66,6 +73,17 @@ impl WorkQueue for SharedWorkState {
 /// outcome through `Result`'s `?`/`#[must_use]` machinery.
 pub struct SearchFailed;
 
+/// How a search ended, once every worker has stopped.
+#[derive(Debug, PartialEq)]
+pub enum RunOutcome {
+    /// Every path was searched.
+    Completed,
+    /// Ctrl-C (or another `ctrlc`-handled termination signal) asked the
+    /// workers to stop - whatever each was already searching finished
+    /// normally, but anything still queued was left unsearched.
+    Cancelled,
+}
+
 /// What `spawn_workers` hands back: a way to collect the results of the
 /// search it just started. The workers are already running by the time you
 /// have one of these - call [`WorkersHandle::consume_with`] to actually see
@@ -73,6 +91,7 @@ pub struct SearchFailed;
 pub struct WorkersHandle {
     threads: Vec<JoinHandle<()>>,
     output_rx: Receiver<Result<String, (SearchError, PathBuf)>>,
+    shared_state: Arc<SharedWorkState>,
 }
 
 impl WorkersHandle {
@@ -86,7 +105,7 @@ impl WorkersHandle {
         self,
         mut on_output: impl FnMut(String),
         mut on_error: impl FnMut(SearchError, &Path),
-    ) -> Result<(), SearchFailed> {
+    ) -> Result<RunOutcome, SearchFailed> {
         let mut had_error = false;
 
         for res in self.output_rx {
@@ -103,7 +122,15 @@ impl WorkersHandle {
             let _ = thread.join();
         }
 
-        if had_error { Err(SearchFailed) } else { Ok(()) }
+        if had_error {
+            return Err(SearchFailed);
+        }
+
+        if self.shared_state.cancelled.load(Ordering::Acquire) {
+            Ok(RunOutcome::Cancelled)
+        } else {
+            Ok(RunOutcome::Completed)
+        }
     }
 }
 
@@ -135,6 +162,22 @@ pub fn spawn_workers(
     let shared_state = Arc::new(SharedWorkState::new(opts.files));
     let make_printer = Arc::new(make_printer);
 
+    // Only the first registration in a process actually takes effect (the
+    // `ctrlc` crate errors on a second one) - harmless to ignore here,
+    // since the only realistic case of this firing more than once is
+    // several tests calling `run()` in the same `cargo test` binary,
+    // where Ctrl-C during the test run isn't a scenario worth handling.
+    let cancel_state = Arc::clone(&shared_state);
+    let _ = ctrlc::set_handler(move || {
+        cancel_state.cancelled.store(true, Ordering::Release);
+        // Wake every worker currently parked in `wait_while` - without
+        // this, one with nothing left in the queue but another still
+        // "in flight" would otherwise keep waiting for a notify that
+        // only ever comes from work finishing or arriving, neither of
+        // which cancellation alone produces.
+        cancel_state.condition.notify_all();
+    });
+
     let mut threads: Vec<JoinHandle<()>> = Vec::new();
 
     let thread_count = if opts.max_threads == 0 {
@@ -158,10 +201,19 @@ pub fn spawn_workers(
                 let guard = shared_state
                     .condition
                     .wait_while(guard, |_| {
-                        shared_state.work_queue.is_empty()
+                        !shared_state.cancelled.load(Ordering::Acquire)
+                            && shared_state.work_queue.is_empty()
                             && shared_state.pending_work_counter.load(Ordering::Acquire) > 0
                     })
                     .unwrap();
+
+                if shared_state.cancelled.load(Ordering::Acquire) {
+                    // Whatever's left queued stays unsearched - only
+                    // work already popped by some other, still-running
+                    // worker finishes normally.
+                    drop(guard);
+                    break;
+                }
 
                 let Some(path) = shared_state.work_queue.pop() else {
                     // Lost the race for the last item to another worker; if no
@@ -229,7 +281,11 @@ pub fn spawn_workers(
     // sender has also been dropped, letting the caller's receive loop end
     drop(output_tx);
 
-    WorkersHandle { threads, output_rx }
+    WorkersHandle {
+        threads,
+        output_rx,
+        shared_state,
+    }
 }
 
 /// Pulls a human-readable message out of a caught panic's payload - most

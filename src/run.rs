@@ -2,7 +2,7 @@ use regex::bytes::RegexBuilder;
 use std::path::{Path, PathBuf};
 
 use crate::{
-    concurrency::{SearchFailed, SpawnOptions, spawn_workers},
+    concurrency::{RunOutcome, SearchFailed, SpawnOptions, spawn_workers},
     printer::Printer,
     search,
 };
@@ -13,6 +13,9 @@ pub enum Error {
     Pattern(regex::Error),
     /// The search ran, but at least one path reported an error along the way.
     SearchFailed,
+    /// Ctrl-C (or another handled termination signal) stopped the search
+    /// before every path was searched.
+    Interrupted,
 }
 
 impl From<regex::Error> for Error {
@@ -83,7 +86,7 @@ pub fn run<P: Printer + 'static>(
         search_archives: options.search_archives,
     };
 
-    spawn_workers(
+    let outcome = spawn_workers(
         SpawnOptions {
             patterns: &patterns,
             files: &options.files,
@@ -94,5 +97,8 @@ pub fn run<P: Printer + 'static>(
     )
     .consume_with(|output| print!("{output}"), on_error)?;
 
-    Ok(())
+    match outcome {
+        RunOutcome::Completed => Ok(()),
+        RunOutcome::Cancelled => Err(Error::Interrupted),
+    }
 }

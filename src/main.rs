@@ -117,5 +117,12 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
         Err(run::Error::SearchFailed) => ExitCode::FAILURE,
+        Err(run::Error::Interrupted) => {
+            eprintln!("{PROGRAM_NAME}: interrupted");
+            // 128 + SIGINT(2), matching the exit status a shell would
+            // report if the process had been killed by the signal
+            // outright instead of catching and handling it.
+            ExitCode::from(130)
+        }
     }
 }
