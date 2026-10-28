@@ -1,5 +1,4 @@
 use std::fmt::Write;
-use std::path::Path;
 
 use owo_colors::OwoColorize;
 
@@ -7,21 +6,18 @@ use owo_colors::OwoColorize;
 ///
 /// One printer instance is created per file, so implementations can hold
 /// per-file state (e.g. "have I already printed this file's name?").
-pub trait Printer {
+pub trait Printer: Send + Sync {
     /// Reports a single line that had at least one match. `matches` holds
     /// every match on the line, sorted by start offset, so implementations
     /// can render the whole line in one shot instead of being called once
     /// per match.
-    fn print(
-        &mut self,
-        file_path: &Path,
-        line_no: u64,
-        line: &[u8],
-        matches: &[regex::bytes::Match],
-    );
+    fn print(&mut self, file_path: &str, line_no: u64, line: &[u8], matches: &[(usize, usize)]);
+
     /// Called once a file has been read to the end. Most printers don't
     /// need this; it exists for ones that need to know when a file is done.
     fn on_eof(&mut self);
+
+    fn into_output(self: Box<Self>) -> String;
 }
 
 /// A printer that builds up its output in memory instead of writing it as
@@ -58,17 +54,10 @@ impl Default for ColorPrinter {
 }
 
 impl Printer for ColorPrinter {
-    fn print(
-        &mut self,
-        file_path: &Path,
-        line_no: u64,
-        line: &[u8],
-        matches: &[regex::bytes::Match],
-    ) {
+    fn print(&mut self, file_path: &str, line_no: u64, line: &[u8], matches: &[(usize, usize)]) {
         if !self.has_printed_filename {
             writeln!(self.output).expect("Error writing output");
-            writeln!(self.output, "{}", file_path.display().bold().purple())
-                .expect("Error writing output");
+            writeln!(self.output, "{}", file_path.bold().purple()).expect("Error writing output");
             self.has_printed_filename = true;
         }
 
@@ -82,8 +71,9 @@ impl Printer for ColorPrinter {
             // calls on either side of such a split would each see an
             // incomplete sequence and print a replacement character for
             // it, turning one character into two mangled ones.
-            let start = snap_start_to_char_boundary(line, m.start()).max(printed_byte_index);
-            let end = snap_end_to_char_boundary(line, m.end());
+            let (start, end) = *m;
+            let start = snap_start_to_char_boundary(line, start.max(printed_byte_index));
+            let end = snap_end_to_char_boundary(line, end);
 
             if start >= end {
                 // Fully covered by a previous match already printed -
@@ -107,7 +97,11 @@ impl Printer for ColorPrinter {
     }
 
     fn on_eof(&mut self) {
-        // nop
+        self.has_printed_filename = false;
+    }
+
+    fn into_output(self: Box<Self>) -> String {
+        self.output
     }
 }
 
@@ -138,11 +132,11 @@ fn snap_end_to_char_boundary(line: &[u8], mut idx: usize) -> usize {
     idx
 }
 
-impl BufferedOutput for ColorPrinter {
-    fn into_output(self) -> String {
-        self.output
-    }
-}
+// impl BufferedOutput for ColorPrinter {
+//     fn into_output(self) -> String {
+//         self.output
+//     }
+// }
 
 /// Renders matches as plain `path: line` text, no color codes - for
 /// output that isn't going to a terminal (piped to a file, `NO_COLOR`, etc.).
@@ -166,17 +160,11 @@ impl Default for MonochromePrinter {
 }
 
 impl Printer for MonochromePrinter {
-    fn print(
-        &mut self,
-        file_path: &Path,
-        _line_no: u64,
-        line: &[u8],
-        _matches: &[regex::bytes::Match],
-    ) {
+    fn print(&mut self, file_path: &str, _line_no: u64, line: &[u8], _matches: &[(usize, usize)]) {
         writeln!(
             self.output,
             "{}: {}",
-            file_path.display(),
+            file_path,
             String::from_utf8_lossy(line)
         )
         .expect("Error writing output");
@@ -185,13 +173,17 @@ impl Printer for MonochromePrinter {
     fn on_eof(&mut self) {
         // nop
     }
-}
 
-impl BufferedOutput for MonochromePrinter {
-    fn into_output(self) -> String {
+    fn into_output(self: Box<Self>) -> String {
         self.output
     }
 }
+
+// impl BufferedOutput for MonochromePrinter {
+//     fn into_output(self) -> String {
+//         self.output
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
@@ -224,11 +216,14 @@ mod tests {
 
         let foo = RegexBuilder::new("foo").build().unwrap();
         let oo = RegexBuilder::new("oo").build().unwrap();
-        let matches: Vec<regex::bytes::Match> =
-            foo.find_iter(line).chain(oo.find_iter(line)).collect();
+        let matches: Vec<(usize, usize)> = foo
+            .find_iter(line)
+            .chain(oo.find_iter(line))
+            .map(|m| (m.start(), m.end()))
+            .collect();
 
-        printer.print(Path::new("f"), 1, line, &matches);
-        let output = strip_ansi(&printer.into_output());
+        printer.print("f", 1, line, &matches);
+        let output = strip_ansi(&Box::new(printer).into_output());
 
         assert!(output.contains("foo bar"));
         assert!(!output.contains("foooo"));
@@ -242,11 +237,14 @@ mod tests {
         // landing the match squarely inside that character.
         let line = [0x61, 0xC3, 0xA9, 0x62];
         let pattern = RegexBuilder::new(r"\xA9").unicode(false).build().unwrap();
-        let matches: Vec<regex::bytes::Match> = pattern.find_iter(&line).collect();
-        assert_eq!((matches[0].start(), matches[0].end()), (2, 3));
+        let matches: Vec<(usize, usize)> = pattern
+            .find_iter(&line)
+            .map(|m| (m.start(), m.end()))
+            .collect();
+        assert_eq!(matches[0], (2, 3));
 
-        printer.print(Path::new("f"), 1, &line, &matches);
-        let output = strip_ansi(&printer.into_output());
+        printer.print("f", 1, &line, &matches);
+        let output = strip_ansi(&Box::new(printer).into_output());
 
         assert_eq!(output.matches('\u{FFFD}').count(), 0);
         assert!(output.contains("aéb"));
@@ -260,11 +258,14 @@ mod tests {
         // second byte of that 3-byte sequence - squarely mid-character.
         let line = [0x61, 0xE2, 0x82, 0xAC];
         let pattern = RegexBuilder::new(r"\xE2").unicode(false).build().unwrap();
-        let matches: Vec<regex::bytes::Match> = pattern.find_iter(&line).collect();
-        assert_eq!((matches[0].start(), matches[0].end()), (1, 2));
+        let matches: Vec<(usize, usize)> = pattern
+            .find_iter(&line)
+            .map(|m| (m.start(), m.end()))
+            .collect();
+        assert_eq!(matches[0], (1, 2));
 
-        printer.print(Path::new("f"), 1, &line, &matches);
-        let output = strip_ansi(&printer.into_output());
+        printer.print("f", 1, &line, &matches);
+        let output = strip_ansi(&Box::new(printer).into_output());
 
         // The whole character must survive, highlighted as one unit,
         // instead of the match being silently dropped by an end boundary

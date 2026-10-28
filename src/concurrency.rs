@@ -6,7 +6,7 @@ use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
 
-use crate::printer::{BufferedOutput, Printer};
+use crate::printer::Printer;
 use crate::search::{Error as SearchError, Options as SearchOptions, Outcome, WorkQueue, search};
 
 /// The state every worker thread shares while walking a search: the queue
@@ -125,12 +125,14 @@ pub struct SpawnOptions<'a> {
 ///
 /// `make_printer` is called once per path a worker picks up (file or
 /// directory alike), since deciding which it is happens inside `search`
-/// itself; it's cloned into every thread, so it needs to be `Send`.
-pub fn spawn_workers<P: Printer + BufferedOutput>(
+/// itself; it's shared across every thread behind an `Arc`, so it needs to
+/// be `Send + Sync`.
+pub fn spawn_workers(
     opts: SpawnOptions,
-    make_printer: impl FnMut() -> P + Send + Clone + 'static,
+    make_printer: impl Fn() -> Box<dyn Printer> + Send + Sync + 'static,
 ) -> WorkersHandle {
     let shared_state = Arc::new(SharedWorkState::new(opts.files));
+    let make_printer = Arc::new(make_printer);
 
     let mut threads: Vec<JoinHandle<()>> = Vec::new();
 
@@ -144,10 +146,11 @@ pub fn spawn_workers<P: Printer + BufferedOutput>(
 
     for _ in 0..thread_count {
         let shared_state = Arc::clone(&shared_state);
-        let mut make_printer = make_printer.clone();
+        let make_printer = Arc::clone(&make_printer);
         let patterns = opts.patterns.to_vec();
         let search_options = *opts.search_options;
         let output_tx = output_tx.clone();
+
         let thread = thread::spawn(move || {
             loop {
                 let guard = shared_state.condition_guard.lock().unwrap();
@@ -174,11 +177,12 @@ pub fn spawn_workers<P: Printer + BufferedOutput>(
                 drop(guard);
 
                 let mut printer = make_printer();
+
                 let res = search(
                     &patterns,
                     &path,
                     &search_options,
-                    &mut printer,
+                    &mut *printer,
                     &*shared_state,
                 );
 

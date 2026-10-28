@@ -4,7 +4,13 @@ use std::fs;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 
+use crate::matcher::{Options as MatchOptions, match_line};
 use crate::printer::Printer;
+
+mod classify;
+mod searchers;
+use classify::{FileType, classify};
+use searchers::{search_compressed, search_plain, search_tarball, search_zip};
 
 /// Something that went wrong while walking or reading a single path.
 #[derive(Debug)]
@@ -15,6 +21,7 @@ pub enum Error {
     Pattern(regex::Error),
     /// Reading a file's lines failed partway through.
     LineRead(crate::line_reader::Error),
+    GenericError,
 }
 
 impl std::fmt::Display for Error {
@@ -23,6 +30,8 @@ impl std::fmt::Display for Error {
             Error::Io(err) => write!(f, "{err}"),
             Error::Pattern(err) => write!(f, "invalid search pattern: {err}"),
             Error::LineRead(err) => write!(f, "{err}"),
+            // TO DO: revisit how we log errors
+            Error::GenericError => todo!(),
         }
     }
 }
@@ -55,6 +64,8 @@ pub enum Outcome {
     BinarySkipped,
 }
 
+type SearchResult = Result<Outcome, Error>;
+
 /// Knobs that change how a search behaves, independent of the pattern(s)
 /// used or which path is being searched.
 #[derive(Clone, Copy, Default)]
@@ -69,6 +80,12 @@ pub struct Options {
     /// line terminator and stripped, rather than as part of the line
     /// content. Mirrors ripgrep's `--crlf`.
     pub crlf: bool,
+    /// When true, zip/tar archives and gzip/bzip2/xz/etc-compressed files
+    /// are unpacked and searched inside; when false (the default), they're
+    /// read as opaque binary data like any other file - and typically
+    /// skipped as binary, same as ripgrep's default. Mirrors ripgrep's
+    /// `-z`/`--search-zip`.
+    pub search_archives: bool,
 }
 
 /// Somewhere a directory's entries can be handed off for someone else to
@@ -83,16 +100,15 @@ pub trait WorkQueue {
 }
 
 /// Searches one path against `patterns`.
-///
 /// A file is read line by line and matched directly. A directory isn't
 /// recursed into here - its entries are handed to `WorkQueue` for someone to pick up.
-pub fn search<T: Printer>(
+pub fn search(
     patterns: &[Regex],
     path: &Path,
     options: &Options,
-    printer: &mut T,
+    printer: &mut dyn Printer,
     queue: &impl WorkQueue,
-) -> Result<Outcome, Error> {
+) -> SearchResult {
     // symlink_metadata (unlike metadata) reports the entry's own type instead
     // of following the symlink, so this check actually catches symlinks
     let metadata = fs::symlink_metadata(path)?;
@@ -117,51 +133,41 @@ pub fn search<T: Printer>(
         return Ok(Outcome::Done);
     }
 
-    search_file(patterns, path, options, printer)
+    if !options.search_archives {
+        return search_plain(patterns, path, options, printer);
+    }
+
+    match classify(path) {
+        FileType::Tar => search_tarball(patterns, path, options, printer),
+        FileType::Zip => search_zip(patterns, path, options, printer),
+        FileType::Compressed(format) => search_compressed(patterns, path, options, printer, format),
+        FileType::Plain => search_plain(patterns, path, options, printer),
+    }
 }
 
-fn search_file<T: Printer>(
+fn search_reader(
     patterns: &[Regex],
-    file_path: &Path,
-    options: &Options,
-    printer: &mut T,
-) -> Result<Outcome, Error> {
-    let file = fs::File::open(file_path)?;
-    search_reader(patterns, file_path, options, file, printer)
-}
-
-fn search_reader<T: Printer>(
-    patterns: &[Regex],
-    file_path: &Path,
+    file_path: &str,
     options: &Options,
     mut reader: impl Read,
-    printer: &mut T,
+    printer: &mut dyn Printer,
 ) -> Result<Outcome, Error> {
     let mut line_number: u64 = 1;
 
     let mut on_read_line = |line: &[u8]| {
-        let mut all_matches: Vec<regex::bytes::Match> = Vec::new();
-
-        for pattern in patterns {
-            for m in pattern.find_iter(line) {
-                all_matches.push(m);
-            }
-        }
-
-        if options.invert_matches {
-            // we are interested in lines with zero total matches
-            if all_matches.is_empty() {
-                printer.print(file_path, line_number, line, &all_matches);
-            }
-        } else if !all_matches.is_empty() {
-            // This allows to walk over all matches for all patterns sequentially
-            all_matches.sort_by_key(|a| a.start());
-
-            printer.print(file_path, line_number, line, &all_matches);
+        if let Some(m) = match_line(
+            patterns,
+            &MatchOptions {
+                invert_matches: options.invert_matches,
+            },
+            line,
+        ) {
+            printer.print(file_path, line_number, line, &m.matches);
         }
 
         line_number += 1;
     };
+
     let res = read_lines(
         &mut reader,
         ReadOptions {
@@ -220,10 +226,10 @@ mod tests {
     impl Printer for RecordingPrinter {
         fn print(
             &mut self,
-            _file_path: &Path,
+            _file_path: &str,
             line_no: u64,
             line: &[u8],
-            matches: &[regex::bytes::Match],
+            matches: &[(usize, usize)],
         ) {
             self.print_call_count += 1;
             let line = String::from_utf8_lossy(line).into_owned();
@@ -232,14 +238,18 @@ mod tests {
                 self.matches.push(RecordedMatch {
                     line_no,
                     line: line.clone(),
-                    match_start: m.start(),
-                    match_end: m.end(),
+                    match_start: m.0,
+                    match_end: m.1,
                 });
             }
         }
 
         fn on_eof(&mut self) {
             self.eof_count += 1;
+        }
+
+        fn into_output(self: Box<Self>) -> String {
+            String::new()
         }
     }
 
@@ -267,7 +277,7 @@ mod tests {
         let mut printer = RecordingPrinter::new();
         search_reader(
             &patterns,
-            Path::new("<test>"),
+            "<test>",
             options,
             Cursor::new(input.as_bytes()),
             &mut printer,
@@ -300,6 +310,7 @@ mod tests {
                 invert_matches: false,
                 search_binary: false,
                 crlf: true,
+                search_archives: false,
             },
         );
         assert_eq!(printer.matches.len(), 2);
@@ -417,7 +428,7 @@ mod tests {
     }
 
     #[test]
-    fn invert_matches_reports_no_match_offsets() {
+    fn invert_matches_highlights_the_entire_line() {
         let printer = run_reader_with_options(
             &["foo"],
             "bar\n",
@@ -427,7 +438,9 @@ mod tests {
             },
         );
 
-        assert_eq!(printer.matches.len(), 0);
+        assert_eq!(printer.matches.len(), 1);
+        assert_eq!(printer.matches[0].match_start, 0);
+        assert_eq!(printer.matches[0].match_end, "bar".len());
         assert_eq!(printer.print_call_count, 1);
     }
 }

@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{
     concurrency::{SearchFailed, SpawnOptions, spawn_workers},
-    printer::{BufferedOutput, Printer},
+    printer::Printer,
     search,
 };
 
@@ -47,17 +47,22 @@ pub struct Options {
     /// line terminator and stripped, rather than as part of the line
     /// content. Mirrors ripgrep's `--crlf`.
     pub crlf: bool,
+    /// When true, zip/tar archives and gzip/bzip2/xz/etc-compressed files
+    /// are unpacked and searched inside, instead of being read as opaque
+    /// binary data like any other file. Mirrors ripgrep's `-z`/`--search-zip`.
+    pub search_archives: bool,
 }
 
 /// Runs a whole search end to end: compiles the patterns, starts the
 /// worker pool, and blocks until every result and error has been reported.
 ///
-/// `make_printer` is cloned into every worker thread and called once per
-/// path it picks up, so it needs to be `Send`. `on_error` only ever runs on
-/// the calling thread, once per path that failed, with that path.
-pub fn run<P: Printer + BufferedOutput>(
+/// `make_printer` is shared across every worker thread and called once per
+/// path a worker picks up, so it needs to be `Send + Sync`. `on_error` only
+/// ever runs on the calling thread, once per path that failed, with that
+/// path.
+pub fn run<P: Printer + 'static>(
     options: &Options,
-    make_printer: impl FnMut() -> P + Send + Clone + 'static,
+    make_printer: impl Fn() -> P + Send + Sync + 'static,
     on_error: impl FnMut(search::Error, &Path),
 ) -> Result<(), Error> {
     // Compile search patterns and fail fast if one of them is invalid
@@ -75,19 +80,19 @@ pub fn run<P: Printer + BufferedOutput>(
         invert_matches: options.invert_matches,
         search_binary: options.search_binary,
         crlf: options.crlf,
+        search_archives: options.search_archives,
     };
 
-    let handle = spawn_workers(
+    spawn_workers(
         SpawnOptions {
             patterns: &patterns,
             files: &options.files,
             search_options: &search_options,
             max_threads: options.max_threads as usize,
         },
-        make_printer,
-    );
-
-    handle.consume_with(|output| print!("{output}"), on_error)?;
+        move || -> Box<dyn Printer> { Box::new(make_printer()) },
+    )
+    .consume_with(|output| print!("{output}"), on_error)?;
 
     Ok(())
 }

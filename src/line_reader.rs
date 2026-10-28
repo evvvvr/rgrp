@@ -51,7 +51,6 @@ pub fn read_lines(
 
     loop {
         let res = reader.read(&mut buffer);
-
         match res {
             Ok(0) => {
                 // Done reading. Whatever's left in `line` is the last line,
@@ -80,18 +79,33 @@ pub fn read_lines(
                     let b = buffer[current_byte_index];
 
                     if b == b'\n' {
-                        // everything since the last boundary, up to (not
-                        // including) this newline, completes the line
-                        line.extend_from_slice(&buffer[line_start..current_byte_index]);
-                        if options.crlf && line.last() == Some(&b'\r') {
-                            // `line` holds the whole assembled line by this
-                            // point regardless of how many reads it took to
-                            // get here, so this also covers a '\r' left
-                            // over from the end of a previous chunk.
-                            line.pop();
+                        if line.is_empty() {
+                            // Fast path: nothing carried over from a
+                            // previous read, so this line lives entirely in
+                            // `buffer` - hand the closure a slice straight
+                            // into it instead of paying for a copy through
+                            // `line` that the slow path below needs only
+                            // for a line split across two reads.
+                            let mut end = current_byte_index;
+                            if options.crlf && end > line_start && buffer[end - 1] == b'\r' {
+                                end -= 1;
+                            }
+                            on_line_read(&buffer[line_start..end]);
+                        } else {
+                            // everything since the last boundary, up to (not
+                            // including) this newline, completes the line
+                            line.extend_from_slice(&buffer[line_start..current_byte_index]);
+                            if options.crlf && line.last() == Some(&b'\r') {
+                                // `line` holds the whole assembled line by
+                                // this point regardless of how many reads
+                                // it took to get here, so this also covers
+                                // a '\r' left over from the end of a
+                                // previous chunk.
+                                line.pop();
+                            }
+                            on_line_read(&line);
+                            line.clear();
                         }
-                        on_line_read(&line);
-                        line.clear();
                         line_start = current_byte_index + 1;
                     }
                 }
@@ -101,7 +115,10 @@ pub fn read_lines(
                 // into `line` to be completed by the next read
                 line.extend_from_slice(&buffer[line_start..bytes_read]);
             }
-            Err(err) => return Err(Error::ReadFailed(err)),
+            Err(err) => {
+                println!("!!!ERROR!!!");
+                return Err(Error::ReadFailed(err));
+            }
         }
     }
 }
