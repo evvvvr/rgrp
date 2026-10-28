@@ -55,9 +55,13 @@ pub enum Outcome {
     /// else that never reached a printer); any buffered output is
     /// complete and should be kept.
     Done,
-    /// The file looked binary partway through, so whatever a printer
-    /// already buffered for it only covers lines read before that point -
-    /// incomplete, so it should be discarded rather than shown.
+    /// The file looked binary partway through. Whatever a printer had
+    /// buffered but not yet sent at that point is discarded, since it's
+    /// incomplete - but if some of this file's output had already been
+    /// sent on earlier (a large file can cross the size-triggered flush
+    /// threshold before any binary content is found later in the same
+    /// file), that part can't be retracted, so it's shown rather than
+    /// compounding an already-partial result with an inconsistent gap.
     BinarySkipped,
 }
 
@@ -169,6 +173,10 @@ fn search_reader(
     // Reused across every line of this file/member instead of allocated
     // fresh per line - `match_line` clears and refills it each call.
     let mut line_matches = Vec::new();
+    // Once a size-triggered `drain` has actually sent something, there's
+    // no taking it back - a *later* binary-file detection can no longer
+    // discard everything for this read, only what's accumulated since.
+    let mut already_emitted_something = false;
 
     let mut on_read_line = |line: &[u8]| {
         let matched = match_line(
@@ -186,6 +194,7 @@ fn search_reader(
             if printer.buffered_len() >= FLUSH_THRESHOLD_BYTES {
                 let chunk = printer.drain();
                 if !chunk.is_empty() {
+                    already_emitted_something = true;
                     emit(chunk);
                 }
             }
@@ -212,7 +221,19 @@ fn search_reader(
             Ok(Outcome::Done)
         }
         Ok(ReadResult::BinaryFileSkipped) => {
-            printer.discard();
+            if already_emitted_something {
+                // Some of this file's matches were already sent on by
+                // the size threshold above, before binary content was
+                // found later in the same file - there's no retracting
+                // that, so finish with whatever's left instead of
+                // discarding it on top of what can't be undone anyway.
+                let output = printer.flush();
+                if !output.is_empty() {
+                    emit(output);
+                }
+            } else {
+                printer.discard();
+            }
             Ok(Outcome::BinarySkipped)
         }
         Err(err) => {

@@ -108,10 +108,24 @@ fn check_unzip_exit_status(status: std::process::ExitStatus) -> Result<(), Error
 fn list_tarball_entries(path: &Path) -> Result<Vec<TarballEntry>, Error> {
     let listing = Command::new("tar").arg("-tvf").arg(path).output()?;
     check_exit_status("tar", listing.status)?;
-    Ok(String::from_utf8_lossy(&listing.stdout)
+
+    // A line this parser can't make sense of isn't safe to just skip:
+    // `tar -xOf`'s single shared stdout stream still contains that
+    // member's actual bytes regardless of whether its listing line
+    // parsed, so silently dropping it would desync every subsequent
+    // member's read offset - corrupting the rest of the archive's
+    // output instead of just that one entry's.
+    String::from_utf8_lossy(&listing.stdout)
         .lines()
-        .filter_map(parse_verbose_tar_line)
-        .collect())
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            parse_verbose_tar_line(line).ok_or_else(|| {
+                Error::Io(io::Error::other(format!(
+                    "couldn't parse tar listing line: {line:?}"
+                )))
+            })
+        })
+        .collect()
 }
 
 /// Searches every member of a tarball in one single pass: one `tar`
@@ -189,6 +203,14 @@ pub(super) fn search_tarball(
             first_error.get_or_insert(err);
         }
     }
+
+    // Close our end of the pipe before waiting on the child, regardless
+    // of whether the loop above actually consumed everything it wrote -
+    // if it didn't (e.g. the drain above hit a real error and broke
+    // early), `tar` could otherwise block forever trying to write more
+    // into a pipe nobody's draining, and this wait() would then block
+    // forever right along with it.
+    drop(child_output);
 
     let status = cmd.wait()?;
     if let Err(err) = check_exit_status("tar", status) {
@@ -291,6 +313,12 @@ pub(super) fn search_zip(
     // without ever stopping the read, so the child's stdout always
     // keeps draining instead of deadlocking on a full pipe.
     let mut current_member_is_binary = false;
+    // Once a size-triggered `drain` has actually sent something for the
+    // *current* member, there's no taking it back - binary detection
+    // later in that same member can no longer discard everything for
+    // it, only what's accumulated since. Reset alongside
+    // `current_member_is_binary` at each member boundary.
+    let mut current_member_already_flushed = false;
     // Reused across every line of every member in this archive instead
     // of allocated fresh per line - `match_line` clears and refills it
     // each call.
@@ -302,8 +330,11 @@ pub(super) fn search_zip(
         } else if line.starts_with(b" extracting: ") || line.starts_with(b"  inflating: ") {
             // Previous member ended - flush its output, unless it turned
             // out to be binary, in which case discard whatever partial
-            // output it buffered before that was detected.
-            if current_member_is_binary {
+            // output it buffered before that was detected - unless some
+            // of it was already sent on early, in which case finish
+            // with what's left instead of discarding on top of what
+            // can't be undone anyway.
+            if current_member_is_binary && !current_member_already_flushed {
                 printer.discard();
             } else {
                 let output = printer.flush();
@@ -315,6 +346,7 @@ pub(super) fn search_zip(
             current_file_path = member_names.pop_front().unwrap_or_default();
             current_file_line_no = 1;
             current_member_is_binary = false;
+            current_member_already_flushed = false;
             archive_prefixed_file_path =
                 path.to_string_lossy().to_string() + ":" + &current_file_path;
         } else {
@@ -347,6 +379,7 @@ pub(super) fn search_zip(
                 if printer.buffered_len() >= FLUSH_THRESHOLD_BYTES {
                     let chunk = printer.drain();
                     if !chunk.is_empty() {
+                        current_member_already_flushed = true;
                         emit(chunk);
                     }
                 }
@@ -375,7 +408,7 @@ pub(super) fn search_zip(
             // The last member in the archive never hit another
             // "extracting:"/"inflating:" marker to flush it, so do that
             // here instead.
-            if current_member_is_binary {
+            if current_member_is_binary && !current_member_already_flushed {
                 printer.discard();
             } else {
                 let output = printer.flush();
