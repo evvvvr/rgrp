@@ -33,6 +33,14 @@ pub struct SharedWorkState {
     /// spawned external processes still get reaped), but none of them
     /// pop another path off the queue afterward.
     pub cancelled: AtomicBool,
+    /// Held by whichever worker is currently sending a path's output,
+    /// from its first chunk to its last - so a large file/archive that
+    /// streams its output in several pieces (rather than one, to keep
+    /// memory bounded) can't have another worker's path interleaved
+    /// between those pieces. Acquired lazily, only on the first chunk a
+    /// path actually has to send, so a path with no matches never waits
+    /// on it at all.
+    pub print_lock: Mutex<()>,
 }
 
 impl SharedWorkState {
@@ -51,6 +59,7 @@ impl SharedWorkState {
             condition: Condvar::new(),
             condition_guard: Mutex::new(()),
             cancelled: AtomicBool::new(false),
+            print_lock: Mutex::new(()),
         }
     }
 }
@@ -246,7 +255,19 @@ pub fn spawn_workers(
                 // program even after all other real work finished.
                 let search_result = panic::catch_unwind(AssertUnwindSafe(|| {
                     let mut printer = make_printer();
+                    // Acquired on this path's first chunk, if it has
+                    // one, and held through every later chunk for the
+                    // same path - so nothing else can interleave its
+                    // own output in between. Released automatically
+                    // once this closure (and therefore this path's
+                    // search) is done, letting the next path that needs
+                    // it take over. A path that never calls `emit` at
+                    // all (no matches) never touches the lock.
+                    let mut print_guard: Option<std::sync::MutexGuard<'_, ()>> = None;
                     let mut emit = |output: String| {
+                        if print_guard.is_none() {
+                            print_guard = Some(shared_state.print_lock.lock().unwrap());
+                        }
                         let _ = output_tx.send(Result::Ok(output));
                     };
 
