@@ -6,6 +6,7 @@ use std::path::Path;
 use common::SharedRecorder;
 use regex::bytes::Regex;
 use rgrp::concurrency::SharedWorkState;
+use rgrp::printer::FlushingPrinter;
 use rgrp::search::{self, search};
 use tempfile::tempdir;
 
@@ -21,14 +22,9 @@ fn walk(
     let shared_state = SharedWorkState::new(&[root.to_path_buf()]);
     while let Some(path) = shared_state.work_queue.pop() {
         let mut printer = make_printer();
-        search(
-            patterns,
-            &path,
-            options,
-            &mut printer,
-            &shared_state,
-            &mut |_| {},
-        )?;
+        let mut emit = |_: String| {};
+        let mut flushing_printer = FlushingPrinter::new(&mut printer, &mut emit);
+        search(patterns, &path, options, &mut flushing_printer, &shared_state)?;
     }
     Ok(())
 }

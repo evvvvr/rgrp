@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 
 use crate::line_reader::{ReadOptions, ReadResult, read_lines};
 use crate::matcher::{Options as MatchOptions, match_line};
-use crate::printer::{FlushingPrinter, Printer};
+use crate::printer::FlushingPrinter;
 
 use super::classify::CompressionFormat;
 use super::{Error, Options, Outcome, SearchResult, search_reader};
@@ -160,8 +160,7 @@ pub(super) fn search_tarball(
     patterns: &[Regex],
     path: &Path,
     options: &Options,
-    printer: &mut dyn Printer,
-    emit: &mut dyn FnMut(String),
+    printer: &mut FlushingPrinter<'_>,
 ) -> SearchResult {
     let entries = list_tarball_entries(path)?;
 
@@ -195,18 +194,15 @@ pub(super) fn search_tarball(
         // own chunk size, not by the member's size.
         let mut member_reader = (&mut child_output).take(entry.size);
 
-        // `search_reader` flushes this member's output to `emit` itself
-        // on a clean finish (or discards it if the member was binary),
-        // so each member's share of the archive's output is sent on as
-        // soon as it's done instead of accumulating for the whole
-        // archive.
+        // `search_reader` flushes this member's output as soon as it's
+        // done (or discards it if the member was binary), instead of
+        // accumulating for the whole archive.
         let res = search_reader(
             patterns,
             &archive_prefixed_file_path,
             options,
             &mut member_reader,
             printer,
-            emit,
         );
 
         // `search_reader` may have stopped early (e.g. the member
@@ -251,9 +247,8 @@ pub(super) fn search_compressed(
     patterns: &[Regex],
     path: &Path,
     options: &Options,
-    printer: &mut dyn Printer,
+    printer: &mut FlushingPrinter<'_>,
     format: CompressionFormat,
-    emit: &mut dyn FnMut(String),
 ) -> SearchResult {
     let (program, flag) = format.decompressor();
 
@@ -272,7 +267,6 @@ pub(super) fn search_compressed(
         options,
         child_output,
         printer,
-        emit,
     );
 
     let status = cmd.wait()?;
@@ -287,8 +281,7 @@ pub(super) fn search_zip(
     patterns: &[Regex],
     path: &Path,
     options: &Options,
-    printer: &mut dyn Printer,
-    emit: &mut dyn FnMut(String),
+    printer: &mut FlushingPrinter<'_>,
 ) -> SearchResult {
     //  ZIP stdout:
     //  Archive:  input/node_modules.zip
@@ -343,7 +336,6 @@ pub(super) fn search_zip(
     // of allocated fresh per line - `match_line` clears and refills it
     // each call.
     let mut line_matches = Vec::new();
-    let mut flushing_printer = FlushingPrinter::new(printer, emit);
 
     let mut read_line = |line: &[u8]| {
         if line.starts_with(b"Archive: ") {
@@ -351,7 +343,7 @@ pub(super) fn search_zip(
         } else if line.starts_with(b" extracting: ") || line.starts_with(b"  inflating: ") {
             // Previous member ended - finish it (see `FlushingPrinter::
             // finish`'s own doc for what that means for a binary one).
-            flushing_printer.finish(current_member_is_binary);
+            printer.finish(current_member_is_binary);
             // beginning of file output
             current_file_path = member_names.pop_front().unwrap_or_default();
             current_file_line_no = 0;
@@ -377,7 +369,7 @@ pub(super) fn search_zip(
             );
 
             if matched {
-                flushing_printer.print_line(
+                printer.print_line(
                     &archive_prefixed_file_path,
                     current_file_line_no,
                     line,
@@ -408,17 +400,17 @@ pub(super) fn search_zip(
             // The last member in the archive never hit another
             // "extracting:"/"inflating:" marker to flush it, so do that
             // here instead.
-            flushing_printer.finish(current_member_is_binary);
+            printer.finish(current_member_is_binary);
             Ok(Outcome::Done)
         }
         Ok(ReadResult::BinaryFileSkipped) => {
             // Unreachable with skip_on_null: false above, but kept
             // for exhaustiveness.
-            flushing_printer.discard();
+            printer.discard();
             Ok(Outcome::BinarySkipped)
         }
         Err(err) => {
-            flushing_printer.discard();
+            printer.discard();
             Err(Error::LineRead(err))
         }
     };
@@ -433,18 +425,10 @@ pub(super) fn search_plain(
     patterns: &[Regex],
     path: &Path,
     options: &Options,
-    printer: &mut dyn Printer,
-    emit: &mut dyn FnMut(String),
+    printer: &mut FlushingPrinter<'_>,
 ) -> SearchResult {
     let file = fs::File::open(path)?;
-    search_reader(
-        patterns,
-        &path.to_string_lossy(),
-        options,
-        file,
-        printer,
-        emit,
-    )
+    search_reader(patterns, &path.to_string_lossy(), options, file, printer)
 }
 
 #[cfg(test)]

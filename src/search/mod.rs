@@ -5,7 +5,7 @@ use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 
 use crate::matcher::{Options as MatchOptions, match_line};
-use crate::printer::{FlushingPrinter, Printer};
+use crate::printer::FlushingPrinter;
 
 mod classify;
 mod searchers;
@@ -107,9 +107,8 @@ pub fn search(
     patterns: &[Regex],
     path: &Path,
     options: &Options,
-    printer: &mut dyn Printer,
+    printer: &mut FlushingPrinter<'_>,
     queue: &impl WorkQueue,
-    emit: &mut dyn FnMut(String),
 ) -> SearchResult {
     // symlink_metadata (unlike metadata) reports the entry's own type instead
     // of following the symlink, so this check actually catches symlinks
@@ -136,37 +135,34 @@ pub fn search(
     }
 
     if !options.search_archives {
-        return search_plain(patterns, path, options, printer, emit);
+        return search_plain(patterns, path, options, printer);
     }
 
     match classify(path) {
-        FileType::Tar => search_tarball(patterns, path, options, printer, emit),
-        FileType::Zip => search_zip(patterns, path, options, printer, emit),
-        FileType::Compressed(format) => {
-            search_compressed(patterns, path, options, printer, format, emit)
-        }
-        FileType::Plain => search_plain(patterns, path, options, printer, emit),
+        FileType::Tar => search_tarball(patterns, path, options, printer),
+        FileType::Zip => search_zip(patterns, path, options, printer),
+        FileType::Compressed(format) => search_compressed(patterns, path, options, printer, format),
+        FileType::Plain => search_plain(patterns, path, options, printer),
     }
 }
 
 /// Reads one logical file's worth of lines (a whole plain file, or one
 /// member of an archive) and matches them against `patterns`. On a clean
-/// finish, flushes whatever `printer` buffered for it straight to `emit` -
-/// so a caller looping over many members (an archive) gets each one's
-/// output as it finishes rather than having to wait for all of them.
+/// finish, flushes whatever `printer` buffered for it straight to its
+/// emit callback - so a caller looping over many members (an archive)
+/// gets each one's output as it finishes rather than having to wait for
+/// all of them.
 fn search_reader(
     patterns: &[Regex],
     file_path: &str,
     options: &Options,
     mut reader: impl Read,
-    printer: &mut dyn Printer,
-    emit: &mut dyn FnMut(String),
+    flushing_printer: &mut FlushingPrinter<'_>,
 ) -> Result<Outcome, Error> {
     let mut line_number: u64 = 1;
     // Reused across every line of this file/member instead of allocated
     // fresh per line - `match_line` clears and refills it each call.
     let mut line_matches = Vec::new();
-    let mut flushing_printer = FlushingPrinter::new(printer, emit);
 
     let mut on_read_line = |line: &[u8]| {
         let matched = match_line(
@@ -213,6 +209,7 @@ fn search_reader(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::printer::Printer;
     use std::io::Cursor;
 
     struct RecordedMatch {
@@ -295,13 +292,14 @@ mod tests {
     ) -> RecordingPrinter {
         let patterns: Vec<Regex> = patterns.iter().map(|p| Regex::new(p).unwrap()).collect();
         let mut printer = RecordingPrinter::new();
+        let mut emit = |_: String| {};
+        let mut flushing_printer = FlushingPrinter::new(&mut printer, &mut emit);
         search_reader(
             &patterns,
             "<test>",
             options,
             Cursor::new(input.as_bytes()),
-            &mut printer,
-            &mut |_| {},
+            &mut flushing_printer,
         )
         .unwrap();
         printer

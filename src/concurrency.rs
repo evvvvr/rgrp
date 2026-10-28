@@ -7,7 +7,7 @@ use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
 
-use crate::printer::Printer;
+use crate::printer::{FlushingPrinter, Printer};
 use crate::search::{Error as SearchError, Options as SearchOptions, WorkQueue, search};
 
 /// The state every worker thread shares while walking a search: the queue
@@ -288,15 +288,9 @@ pub fn spawn_workers(
                         }
                         let _ = output_tx.send(Result::Ok(output));
                     };
+                    let mut flushing_printer = FlushingPrinter::new(&mut *printer, &mut emit);
 
-                    search(
-                        &patterns,
-                        &path,
-                        &search_options,
-                        &mut *printer,
-                        &*shared_state,
-                        &mut emit,
-                    )
+                    search(&patterns, &path, &search_options, &mut flushing_printer, &*shared_state)
                 }));
 
                 // On success, every bit of output - whether this path was
