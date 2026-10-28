@@ -17,10 +17,10 @@ use searchers::{search_compressed, search_plain, search_tarball, search_zip};
 pub enum Error {
     /// A filesystem operation failed (missing path, permissions, etc.).
     Io(std::io::Error),
-    /// One of the search patterns failed to compile.
-    Pattern(regex::Error),
-    /// Reading a file's lines failed partway through.
-    LineRead(crate::line_reader::Error),
+    /// Reading a file's lines failed partway through - distinct from
+    /// `Io` only in the message `main.rs` prints for it (which operation
+    /// was underway), not in the underlying error itself.
+    LineRead(std::io::Error),
     /// The worker searching this path panicked (e.g. an external tool
     /// like `tar`/`unzip`/a decompressor failed to start) - caught at
     /// the worker-pool level rather than left to unwind, so one path's
@@ -33,7 +33,6 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::Io(err) => write!(f, "{err}"),
-            Error::Pattern(err) => write!(f, "invalid search pattern: {err}"),
             Error::LineRead(err) => write!(f, "{err}"),
             Error::WorkerPanicked(message) => write!(f, "panicked: {message}"),
         }
@@ -45,12 +44,6 @@ impl std::error::Error for Error {}
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Self {
         Error::Io(e)
-    }
-}
-
-impl From<regex::Error> for Error {
-    fn from(e: regex::Error) -> Self {
-        Error::Pattern(e)
     }
 }
 

@@ -94,7 +94,6 @@ fn main() -> ExitCode {
             search::Error::Io(err) => {
                 eprintln!("{PROGRAM_NAME}:{path} IO error for operation on path {path}: {err}")
             }
-            search::Error::Pattern(err) => eprintln!("{PROGRAM_NAME}: pattern error: {err}"),
             search::Error::LineRead(err) => {
                 eprintln!("{PROGRAM_NAME}:{path} error reading lines: {err}")
             }

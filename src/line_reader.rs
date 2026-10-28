@@ -9,21 +9,6 @@ pub enum ReadResult {
     BinaryFileSkipped,
 }
 
-#[derive(Debug)]
-pub enum Error {
-    ReadFailed(io::Error),
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::ReadFailed(err) => write!(f, "error reading file: {err}"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
 /// Knobs that change how `read_lines` splits and reports lines, independent
 /// of where the bytes themselves come from.
 #[derive(Clone, Copy, Default)]
@@ -40,7 +25,7 @@ pub fn read_lines(
     reader: &mut impl Read,
     options: ReadOptions,
     on_line_read: &mut impl FnMut(&[u8]),
-) -> Result<ReadResult, Error> {
+) -> io::Result<ReadResult> {
     let mut buffer = [0; BUFFER_SIZE_BYTES];
 
     // Bytes of the line currently being assembled. Lives outside the loop
@@ -116,7 +101,7 @@ pub fn read_lines(
                 line.extend_from_slice(&buffer[line_start..bytes_read]);
             }
             Err(err) => {
-                return Err(Error::ReadFailed(err));
+                return Err(err);
             }
         }
     }
@@ -234,8 +219,8 @@ mod tests {
             &mut |line| lines.push(line.to_vec()),
         );
 
-        let Err(Error::ReadFailed(err)) = res else {
-            panic!("expected a ReadFailed error, got {res:?}");
+        let Err(err) = res else {
+            panic!("expected a read error, got {res:?}");
         };
         assert_eq!(err.to_string(), "boom");
         assert!(lines.is_empty());
