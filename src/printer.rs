@@ -42,12 +42,45 @@ pub trait Printer: Send + Sync {
     fn drain(&mut self) -> String;
 }
 
+/// A plain, growable text buffer that accumulates a printer's rendered
+/// output until something decides it's time to let it go. `ColorPrinter`
+/// and `MonochromePrinter` both delegate their `Printer::flush`/`discard`/
+/// `buffered_len`/`drain` to this instead of each hand-rolling the same
+/// `std::mem::take`/`clear`/`len` on a `String` - the only thing that
+/// actually differs between the two printers is how a line gets rendered
+/// in the first place, not how the rendered text gets accumulated or
+/// evicted.
+#[derive(Default)]
+struct OutputBuffer(String);
+
+impl OutputBuffer {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Takes and returns everything accumulated so far.
+    fn drain(&mut self) -> String {
+        std::mem::take(&mut self.0)
+    }
+
+    /// Clears everything accumulated so far without returning it.
+    fn discard(&mut self) {
+        self.0.clear();
+    }
+}
+
+impl Write for OutputBuffer {
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        self.0.write_str(s)
+    }
+}
+
 /// Renders matches with ANSI colors (filename in purple/bold, matched text
 /// in red), for output going to an actual terminal.
 pub struct ColorPrinter {
     // assuming one printer per file
     has_printed_filename: bool,
-    output: String,
+    output: OutputBuffer,
 }
 
 impl ColorPrinter {
@@ -55,7 +88,7 @@ impl ColorPrinter {
     pub fn new() -> Self {
         Self {
             has_printed_filename: false,
-            output: String::new(),
+            output: OutputBuffer::default(),
         }
     }
 }
@@ -111,12 +144,12 @@ impl Printer for ColorPrinter {
 
     fn flush(&mut self) -> String {
         self.has_printed_filename = false;
-        std::mem::take(&mut self.output)
+        self.output.drain()
     }
 
     fn discard(&mut self) {
         self.has_printed_filename = false;
-        self.output.clear();
+        self.output.discard();
     }
 
     fn buffered_len(&self) -> usize {
@@ -124,7 +157,7 @@ impl Printer for ColorPrinter {
     }
 
     fn drain(&mut self) -> String {
-        std::mem::take(&mut self.output)
+        self.output.drain()
     }
 }
 
@@ -158,14 +191,14 @@ fn snap_end_to_char_boundary(line: &[u8], mut idx: usize) -> usize {
 /// Renders matches as plain `path: line` text, no color codes - for
 /// output that isn't going to a terminal (piped to a file, `NO_COLOR`, etc.).
 pub struct MonochromePrinter {
-    output: String,
+    output: OutputBuffer,
 }
 
 impl MonochromePrinter {
     /// Creates a printer for a single file, with nothing buffered yet.
     pub fn new() -> Self {
         Self {
-            output: String::new(),
+            output: OutputBuffer::default(),
         }
     }
 }
@@ -188,11 +221,11 @@ impl Printer for MonochromePrinter {
     }
 
     fn flush(&mut self) -> String {
-        std::mem::take(&mut self.output)
+        self.output.drain()
     }
 
     fn discard(&mut self) {
-        self.output.clear();
+        self.output.discard();
     }
 
     fn buffered_len(&self) -> usize {
@@ -200,7 +233,7 @@ impl Printer for MonochromePrinter {
     }
 
     fn drain(&mut self) -> String {
-        std::mem::take(&mut self.output)
+        self.output.drain()
     }
 }
 
