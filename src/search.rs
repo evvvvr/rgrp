@@ -126,8 +126,41 @@ pub fn search<T: Printer>(
             // additional check if it's a compressed tarball
             if let Option::Some(filename) = path.file_stem().unwrap().to_str() {
                 if filename.ends_with(".tar") {
-                    // tar -tzvf filename.tgz to print filenames to stderr
-                    println!("TAR GZ")
+                    let listing = Command::new("tar").arg("-tf").arg(path).output()?;
+                    let entry_names: std::collections::VecDeque<String> =
+                        String::from_utf8_lossy(&listing.stdout)
+                            .lines()
+                            .map(|s| s.to_string())
+                            .collect();
+
+                    for entry in entry_names {
+                        let mut cmd = Command::new("tar")
+                            .arg("-xOf")
+                            .arg(path)
+                            .arg(entry.clone())
+                            .stdin(Stdio::piped())
+                            .stdout(Stdio::piped())
+                            .spawn()
+                            .unwrap();
+
+                        let child_output = cmd.stdout.take().unwrap();
+                        let archive_prefixed_file_path =
+                            path.to_string_lossy().to_string() + ":" + &entry;
+
+                        let _ = search_reader(
+                            patterns,
+                            &archive_prefixed_file_path,
+                            options,
+                            child_output,
+                            printer,
+                        );
+
+                        let _ = cmd.wait();
+                        printer.on_eof();
+                    }
+
+                    //TODO: fix this
+                    return Ok(Outcome::Done);
                 } else {
                     println!("GZ")
                 }
@@ -263,18 +296,23 @@ fn search_file<T: Printer>(
     printer: &mut T,
 ) -> Result<Outcome, Error> {
     let file = fs::File::open(file_path)?;
-    search_reader(patterns, file_path, options, file, printer)
+    search_reader(
+        patterns,
+        &file_path.to_string_lossy(),
+        options,
+        file,
+        printer,
+    )
 }
 
 fn search_reader<T: Printer>(
     patterns: &[Regex],
-    file_path: &Path,
+    file_path: &str,
     options: &Options,
     mut reader: impl Read,
     printer: &mut T,
 ) -> Result<Outcome, Error> {
     let mut line_number: u64 = 1;
-    let file_path = &file_path.to_string_lossy();
 
     let mut on_read_line = |line: &[u8]| {
         if let Some(m) = match_line(
