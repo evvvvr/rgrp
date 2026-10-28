@@ -131,7 +131,14 @@ impl Printer for ColorPrinter {
             if start > printed_byte_index {
                 highlighted.push_str(&String::from_utf8_lossy(&line[printed_byte_index..start]));
             }
-            highlighted.push_str(&String::from_utf8_lossy(&line[start..end]).red().to_string());
+            // `write!` renders the colored wrapper's `Display` impl
+            // straight into `highlighted`, rather than first rendering
+            // it into its own throwaway `String` via `.to_string()`.
+            let _ = write!(
+                highlighted,
+                "{}",
+                String::from_utf8_lossy(&line[start..end]).red()
+            );
             printed_byte_index = end;
         }
 

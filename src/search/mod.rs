@@ -169,16 +169,22 @@ fn search_reader(
     emit: &mut dyn FnMut(String),
 ) -> Result<Outcome, Error> {
     let mut line_number: u64 = 1;
+    // Reused across every line of this file/member instead of allocated
+    // fresh per line - `match_line` clears and refills it each call.
+    let mut line_matches = Vec::new();
 
     let mut on_read_line = |line: &[u8]| {
-        if let Some(m) = match_line(
+        let matched = match_line(
             patterns,
             &MatchOptions {
                 invert_matches: options.invert_matches,
             },
             line,
-        ) {
-            printer.print(file_path, line_number, line, &m.matches);
+            &mut line_matches,
+        );
+
+        if matched {
+            printer.print(file_path, line_number, line, &line_matches);
 
             if printer.buffered_len() >= FLUSH_THRESHOLD_BYTES {
                 let chunk = printer.drain();

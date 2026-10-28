@@ -235,6 +235,10 @@ pub(super) fn search_zip(
     // without ever stopping the read, so the child's stdout always
     // keeps draining instead of deadlocking on a full pipe.
     let mut current_member_is_binary = false;
+    // Reused across every line of every member in this archive instead
+    // of allocated fresh per line - `match_line` clears and refills it
+    // each call.
+    let mut line_matches = Vec::new();
 
     let mut read_line = |line: &[u8]| {
         if line.starts_with(b"Archive: ") {
@@ -267,18 +271,21 @@ pub(super) fn search_zip(
                 return;
             }
 
-            if let Some(m) = match_line(
+            let matched = match_line(
                 patterns,
                 &MatchOptions {
                     invert_matches: options.invert_matches,
                 },
                 line,
-            ) {
+                &mut line_matches,
+            );
+
+            if matched {
                 printer.print(
                     &archive_prefixed_file_path,
                     current_file_line_no,
                     line,
-                    &m.matches,
+                    &line_matches,
                 );
 
                 if printer.buffered_len() >= FLUSH_THRESHOLD_BYTES {
