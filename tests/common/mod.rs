@@ -52,29 +52,25 @@ impl SharedRecorder {
 pub struct RecordingPrinter(Arc<Mutex<Recorded>>);
 
 impl Printer for RecordingPrinter {
-    fn print(&mut self, file_path: &str, line_no: u64, line: &[u8], _matches: &[(usize, usize)]) {
+    fn render_line(
+        &mut self,
+        file_path: &str,
+        line_no: u64,
+        line: &[u8],
+        _matches: &[(usize, usize)],
+    ) -> String {
         self.0.lock().unwrap().matches.push(RecordedMatch {
             file_path: file_path.to_owned(),
             line_no,
             line: String::from_utf8_lossy(line).into_owned(),
         });
-    }
-
-    fn flush(&mut self) -> String {
-        self.0.lock().unwrap().eof_count += 1;
         // RecordingPrinter records structured matches directly into the
-        // shared recorder at `print` time rather than producing printable
-        // text, so there's nothing buffered here to hand back.
+        // shared recorder at render time rather than producing printable
+        // text, so there's nothing to hand back here.
         String::new()
     }
 
-    fn discard(&mut self) {}
-
-    fn buffered_len(&self) -> usize {
-        0
-    }
-
-    fn drain(&mut self) -> String {
-        String::new()
+    fn reset(&mut self) {
+        self.0.lock().unwrap().eof_count += 1;
     }
 }

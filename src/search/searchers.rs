@@ -6,12 +6,10 @@ use std::process::{Command, Stdio};
 
 use crate::line_reader::{ReadOptions, ReadResult, read_lines};
 use crate::matcher::{Options as MatchOptions, match_line};
-use crate::printer::Printer;
+use crate::printer::{FlushingPrinter, Printer};
 
 use super::classify::CompressionFormat;
-use super::{
-    Error, Options, Outcome, SearchResult, finish_output, print_and_maybe_flush, search_reader,
-};
+use super::{Error, Options, Outcome, SearchResult, search_reader};
 
 /// One member of a tarball, as reported by `tar -tvf`'s verbose listing.
 struct TarballEntry {
@@ -341,38 +339,23 @@ pub(super) fn search_zip(
     // without ever stopping the read, so the child's stdout always
     // keeps draining instead of deadlocking on a full pipe.
     let mut current_member_is_binary = false;
-    // Once a size-triggered `drain` has actually sent something for the
-    // *current* member, there's no taking it back - binary detection
-    // later in that same member can no longer discard everything for
-    // it, only what's accumulated since. Reset alongside
-    // `current_member_is_binary` at each member boundary.
-    let mut current_member_already_flushed = false;
     // Reused across every line of every member in this archive instead
     // of allocated fresh per line - `match_line` clears and refills it
     // each call.
     let mut line_matches = Vec::new();
+    let mut flushing_printer = FlushingPrinter::new(printer, emit);
 
     let mut read_line = |line: &[u8]| {
         if line.starts_with(b"Archive: ") {
             // beginning of an archive
         } else if line.starts_with(b" extracting: ") || line.starts_with(b"  inflating: ") {
-            // Previous member ended - flush its output, unless it turned
-            // out to be binary, in which case discard whatever partial
-            // output it buffered before that was detected - unless some
-            // of it was already sent on early, in which case finish
-            // with what's left instead of discarding on top of what
-            // can't be undone anyway.
-            finish_output(
-                printer,
-                emit,
-                current_member_is_binary,
-                current_member_already_flushed,
-            );
+            // Previous member ended - finish it (see `FlushingPrinter::
+            // finish`'s own doc for what that means for a binary one).
+            flushing_printer.finish(current_member_is_binary);
             // beginning of file output
             current_file_path = member_names.pop_front().unwrap_or_default();
             current_file_line_no = 0;
             current_member_is_binary = false;
-            current_member_already_flushed = false;
             archive_prefixed_file_path = format!("{archive_path}:{current_file_path}");
         } else {
             current_file_line_no += 1;
@@ -393,17 +376,13 @@ pub(super) fn search_zip(
                 &mut line_matches,
             );
 
-            if matched
-                && print_and_maybe_flush(
-                    printer,
-                    emit,
+            if matched {
+                flushing_printer.print_line(
                     &archive_prefixed_file_path,
                     current_file_line_no,
                     line,
                     &line_matches,
-                )
-            {
-                current_member_already_flushed = true;
+                );
             }
         }
     };
@@ -429,22 +408,17 @@ pub(super) fn search_zip(
             // The last member in the archive never hit another
             // "extracting:"/"inflating:" marker to flush it, so do that
             // here instead.
-            finish_output(
-                printer,
-                emit,
-                current_member_is_binary,
-                current_member_already_flushed,
-            );
+            flushing_printer.finish(current_member_is_binary);
             Ok(Outcome::Done)
         }
         Ok(ReadResult::BinaryFileSkipped) => {
             // Unreachable with skip_on_null: false above, but kept
             // for exhaustiveness.
-            printer.discard();
+            flushing_printer.discard();
             Ok(Outcome::BinarySkipped)
         }
         Err(err) => {
-            printer.discard();
+            flushing_printer.discard();
             Err(Error::LineRead(err))
         }
     };

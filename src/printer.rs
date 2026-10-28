@@ -2,76 +2,115 @@ use std::fmt::Write;
 
 use owo_colors::OwoColorize;
 
-/// Turns matched lines into whatever a printer's output format looks like.
+/// Turns one matched line into whatever a printer's output format looks
+/// like - purely a rendering concern. Buffering, flushing and deciding
+/// when output actually gets sent anywhere live in `FlushingPrinter`
+/// instead, built on top of this rather than part of it.
 ///
 /// One printer instance is created per file, so implementations can hold
-/// per-file state (e.g. "have I already printed this file's name?").
+/// per-file state (e.g. "have I already printed this file's name?") -
+/// `reset` is called once that file (or archive member) is done, so the
+/// next one starts fresh.
 pub trait Printer: Send + Sync {
-    /// Reports a single line that had at least one match. `matches` holds
+    /// Renders a single line that had at least one match, as the text
+    /// that should be appended to this file's output. `matches` holds
     /// every match on the line, sorted by start offset, so implementations
     /// can render the whole line in one shot instead of being called once
     /// per match.
-    fn print(&mut self, file_path: &str, line_no: u64, line: &[u8], matches: &[(usize, usize)]);
+    fn render_line(
+        &mut self,
+        file_path: &str,
+        line_no: u64,
+        line: &[u8],
+        matches: &[(usize, usize)],
+    ) -> String;
 
-    /// Called once a file (or one member of an archive) has been read to
-    /// the end cleanly - takes and returns everything buffered for it
-    /// since the last `flush`/`discard`, so the caller can emit that
-    /// chunk right away instead of holding it until an entire archive of
-    /// many members is done.
-    fn flush(&mut self) -> String;
-
-    /// Called when a file (or archive member) turned out to be binary
-    /// partway through, or failed to read - clears whatever was buffered
-    /// for it instead of returning it, since it's incomplete and
-    /// shouldn't be shown.
-    fn discard(&mut self);
-
-    /// How many bytes are currently buffered, waiting for the next
-    /// `flush`/`discard`/`drain` - lets a caller decide when a single
-    /// file's own output has grown large enough to send on early via
-    /// `drain`, rather than letting it grow unboundedly until the file
-    /// (or archive member) finally ends.
-    fn buffered_len(&self) -> usize;
-
-    /// Takes and returns whatever is currently buffered, same as `flush`,
-    /// but - unlike `flush` - leaves per-file state (e.g. "have I already
-    /// printed this file's name?") untouched, since the file isn't done:
-    /// this is a size-triggered early flush mid-file, not an end-of-file
-    /// one, so the next chunk is still the same file's continuation
-    /// rather than a new one that needs its own header.
-    fn drain(&mut self) -> String;
+    /// Clears any per-file state (e.g. "have I already printed this
+    /// file's name?"), since whatever comes next - another file, or
+    /// more output for this same file after a discarded binary member -
+    /// starts fresh.
+    fn reset(&mut self);
 }
 
-/// A plain, growable text buffer that accumulates a printer's rendered
-/// output until something decides it's time to let it go. `ColorPrinter`
-/// and `MonochromePrinter` both delegate their `Printer::flush`/`discard`/
-/// `buffered_len`/`drain` to this instead of each hand-rolling the same
-/// `std::mem::take`/`clear`/`len` on a `String` - the only thing that
-/// actually differs between the two printers is how a line gets rendered
-/// in the first place, not how the rendered text gets accumulated or
-/// evicted.
-#[derive(Default)]
-struct OutputBuffer(String);
+/// How large a buffered-but-not-yet-emitted chunk is allowed to grow
+/// before `FlushingPrinter` sends it on early, mid-file - otherwise a
+/// single file (or archive member) with a huge number of matches would
+/// hold all of them in memory until it finally ends, regardless of how
+/// the rest of a search is already bounded.
+const FLUSH_THRESHOLD_BYTES: usize = 1 << 20; // 1 MiB
 
-impl OutputBuffer {
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    /// Takes and returns everything accumulated so far.
-    fn drain(&mut self) -> String {
-        std::mem::take(&mut self.0)
-    }
-
-    /// Clears everything accumulated so far without returning it.
-    fn discard(&mut self) {
-        self.0.clear();
-    }
+/// Wraps a `Printer` with the policy of when its rendered lines actually
+/// get sent to `emit`.
+///
+/// One instance covers one *path* (which may itself contain many
+/// files/members, e.g. an archive) - `finish` marks the end of each
+/// individual file/member within it, not the end of the whole thing.
+pub struct FlushingPrinter<'a> {
+    printer: &'a mut dyn Printer,
+    emit: &'a mut dyn FnMut(String),
+    buffer: String,
+    // Once a size-triggered flush has actually sent something for the
+    // *current* file/member, there's no taking it back - a later binary
+    // detection can no longer discard everything for it, only what's
+    // accumulated since. Reset by `finish`/`discard`, which both mark a
+    // file/member boundary.
+    already_emitted: bool,
 }
 
-impl Write for OutputBuffer {
-    fn write_str(&mut self, s: &str) -> std::fmt::Result {
-        self.0.write_str(s)
+impl<'a> FlushingPrinter<'a> {
+    pub fn new(printer: &'a mut dyn Printer, emit: &'a mut dyn FnMut(String)) -> Self {
+        Self {
+            printer,
+            emit,
+            buffer: String::new(),
+            already_emitted: false,
+        }
+    }
+
+    /// Renders and buffers one matched line, sending the buffer on early
+    /// if that pushes it past the size threshold.
+    pub fn print_line(&mut self, file_path: &str, line_no: u64, line: &[u8], matches: &[(usize, usize)]) {
+        let rendered = self.printer.render_line(file_path, line_no, line, matches);
+        self.buffer.push_str(&rendered);
+
+        if self.buffer.len() >= FLUSH_THRESHOLD_BYTES {
+            let chunk = std::mem::take(&mut self.buffer);
+            if !chunk.is_empty() {
+                self.already_emitted = true;
+                (self.emit)(chunk);
+            }
+        }
+    }
+
+    /// Marks the end of one file/member. If it turned out binary and
+    /// nothing had already been sent for it, discards whatever's
+    /// buffered, since it's incomplete and shouldn't be shown; otherwise
+    /// flushes and emits whatever's left - once some of a file's output
+    /// has already gone out, there's no retracting it, so this finishes
+    /// with the rest instead of discarding on top of what can't be
+    /// undone anyway.
+    pub fn finish(&mut self, is_binary: bool) {
+        if is_binary && !self.already_emitted {
+            self.buffer.clear();
+        } else {
+            let chunk = std::mem::take(&mut self.buffer);
+            if !chunk.is_empty() {
+                (self.emit)(chunk);
+            }
+        }
+
+        self.already_emitted = false;
+        self.printer.reset();
+    }
+
+    /// Unconditionally discards whatever's buffered for the current
+    /// file/member, regardless of whether anything was already emitted -
+    /// for a genuine read error, where there's no "finish with what's
+    /// left" to fall back to, only "stop".
+    pub fn discard(&mut self) {
+        self.buffer.clear();
+        self.already_emitted = false;
+        self.printer.reset();
     }
 }
 
@@ -80,15 +119,13 @@ impl Write for OutputBuffer {
 pub struct ColorPrinter {
     // assuming one printer per file
     has_printed_filename: bool,
-    output: OutputBuffer,
 }
 
 impl ColorPrinter {
-    /// Creates a printer for a single file, with nothing buffered yet.
+    /// Creates a printer for a single file, with nothing printed yet.
     pub fn new() -> Self {
         Self {
             has_printed_filename: false,
-            output: OutputBuffer::default(),
         }
     }
 }
@@ -100,10 +137,18 @@ impl Default for ColorPrinter {
 }
 
 impl Printer for ColorPrinter {
-    fn print(&mut self, file_path: &str, line_no: u64, line: &[u8], matches: &[(usize, usize)]) {
+    fn render_line(
+        &mut self,
+        file_path: &str,
+        line_no: u64,
+        line: &[u8],
+        matches: &[(usize, usize)],
+    ) -> String {
+        let mut output = String::new();
+
         if !self.has_printed_filename {
-            writeln!(self.output).expect("Error writing output");
-            writeln!(self.output, "{}", file_path.bold().purple()).expect("Error writing output");
+            writeln!(output).expect("Error writing output");
+            writeln!(output, "{}", file_path.bold().purple()).expect("Error writing output");
             self.has_printed_filename = true;
         }
 
@@ -146,25 +191,12 @@ impl Printer for ColorPrinter {
             highlighted.push_str(&String::from_utf8_lossy(&line[printed_byte_index..]));
         }
 
-        let _ = writeln!(self.output, "{}: {}", line_no.green(), highlighted);
+        let _ = writeln!(output, "{}: {}", line_no.green(), highlighted);
+        output
     }
 
-    fn flush(&mut self) -> String {
+    fn reset(&mut self) {
         self.has_printed_filename = false;
-        self.output.drain()
-    }
-
-    fn discard(&mut self) {
-        self.has_printed_filename = false;
-        self.output.discard();
-    }
-
-    fn buffered_len(&self) -> usize {
-        self.output.len()
-    }
-
-    fn drain(&mut self) -> String {
-        self.output.drain()
     }
 }
 
@@ -197,50 +229,32 @@ fn snap_end_to_char_boundary(line: &[u8], mut idx: usize) -> usize {
 
 /// Renders matches as plain `path: line` text, no color codes - for
 /// output that isn't going to a terminal (piped to a file, `NO_COLOR`, etc.).
-pub struct MonochromePrinter {
-    output: OutputBuffer,
-}
+#[derive(Default)]
+pub struct MonochromePrinter;
 
 impl MonochromePrinter {
-    /// Creates a printer for a single file, with nothing buffered yet.
+    /// Creates a printer for a single file.
     pub fn new() -> Self {
-        Self {
-            output: OutputBuffer::default(),
-        }
-    }
-}
-
-impl Default for MonochromePrinter {
-    fn default() -> Self {
-        Self::new()
+        Self
     }
 }
 
 impl Printer for MonochromePrinter {
-    fn print(&mut self, file_path: &str, _line_no: u64, line: &[u8], _matches: &[(usize, usize)]) {
-        writeln!(
-            self.output,
-            "{}: {}",
-            file_path,
-            String::from_utf8_lossy(line)
-        )
-        .expect("Error writing output");
+    fn render_line(
+        &mut self,
+        file_path: &str,
+        _line_no: u64,
+        line: &[u8],
+        _matches: &[(usize, usize)],
+    ) -> String {
+        let mut output = String::new();
+        writeln!(output, "{}: {}", file_path, String::from_utf8_lossy(line))
+            .expect("Error writing output");
+        output
     }
 
-    fn flush(&mut self) -> String {
-        self.output.drain()
-    }
-
-    fn discard(&mut self) {
-        self.output.discard();
-    }
-
-    fn buffered_len(&self) -> usize {
-        self.output.len()
-    }
-
-    fn drain(&mut self) -> String {
-        self.output.drain()
+    fn reset(&mut self) {
+        // nop - no per-file state to clear
     }
 }
 
@@ -281,8 +295,7 @@ mod tests {
             .map(|m| (m.start(), m.end()))
             .collect();
 
-        printer.print("f", 1, line, &matches);
-        let output = strip_ansi(&printer.flush());
+        let output = strip_ansi(&printer.render_line("f", 1, line, &matches));
 
         assert!(output.contains("foo bar"));
         assert!(!output.contains("foooo"));
@@ -302,8 +315,7 @@ mod tests {
             .collect();
         assert_eq!(matches[0], (2, 3));
 
-        printer.print("f", 1, &line, &matches);
-        let output = strip_ansi(&printer.flush());
+        let output = strip_ansi(&printer.render_line("f", 1, &line, &matches));
 
         assert_eq!(output.matches('\u{FFFD}').count(), 0);
         assert!(output.contains("aéb"));
@@ -323,8 +335,7 @@ mod tests {
             .collect();
         assert_eq!(matches[0], (1, 2));
 
-        printer.print("f", 1, &line, &matches);
-        let output = strip_ansi(&printer.flush());
+        let output = strip_ansi(&printer.render_line("f", 1, &line, &matches));
 
         // The whole character must survive, highlighted as one unit,
         // instead of the match being silently dropped by an end boundary
@@ -334,50 +345,85 @@ mod tests {
     }
 
     #[test]
-    fn discard_clears_buffered_output_without_returning_it() {
+    fn render_line_only_prints_the_filename_header_once_per_file() {
         let mut printer = ColorPrinter::new();
-        printer.print("f", 1, b"foo", &[(0, 3)]);
+        let first = strip_ansi(&printer.render_line("myfile", 1, b"foo", &[(0, 3)]));
+        let second = strip_ansi(&printer.render_line("myfile", 2, b"bar", &[(0, 3)]));
 
-        printer.discard();
-
-        assert_eq!(printer.flush(), "");
-    }
-
-    #[test]
-    fn flush_resets_state_so_the_next_file_prints_its_own_filename_header() {
-        let mut printer = ColorPrinter::new();
-        printer.print("first", 1, b"foo", &[(0, 3)]);
-        printer.flush();
-
-        printer.print("second", 1, b"foo", &[(0, 3)]);
-        let output = strip_ansi(&printer.flush());
-
-        assert!(output.contains("second"));
-    }
-
-    #[test]
-    fn drain_keeps_per_file_state_so_the_next_chunk_skips_the_header() {
-        let mut printer = ColorPrinter::new();
-        printer.print("myfile", 1, b"foo", &[(0, 3)]);
-        let first = strip_ansi(&printer.drain());
         assert!(first.contains("myfile"));
-
-        // Same file, next line - drain shouldn't have reset
-        // `has_printed_filename`, so this must not reprint the header.
-        printer.print("myfile", 2, b"bar", &[(0, 3)]);
-        let second = strip_ansi(&printer.flush());
         assert!(!second.contains("myfile"));
     }
 
     #[test]
-    fn buffered_len_reflects_what_was_just_printed_and_drops_to_zero_after_draining() {
+    fn reset_makes_the_next_render_line_print_its_own_filename_header() {
         let mut printer = ColorPrinter::new();
-        assert_eq!(printer.buffered_len(), 0);
+        printer.render_line("first", 1, b"foo", &[(0, 3)]);
+        printer.reset();
 
-        printer.print("f", 1, b"foo", &[(0, 3)]);
-        assert!(printer.buffered_len() > 0);
+        let output = strip_ansi(&printer.render_line("second", 1, b"foo", &[(0, 3)]));
+        assert!(output.contains("second"));
+    }
 
-        printer.drain();
-        assert_eq!(printer.buffered_len(), 0);
+    fn collect_emitted(f: impl FnOnce(&mut dyn FnMut(String))) -> Vec<String> {
+        let mut emitted = Vec::new();
+        let mut emit = |chunk: String| emitted.push(chunk);
+        f(&mut emit);
+        emitted
+    }
+
+    #[test]
+    fn flushing_printer_sends_nothing_until_finish_for_small_output() {
+        let mut printer = ColorPrinter::new();
+        let emitted = collect_emitted(|emit| {
+            let mut flushing = FlushingPrinter::new(&mut printer, emit);
+            flushing.print_line("f", 1, b"foo", &[(0, 3)]);
+            flushing.finish(false);
+        });
+
+        assert_eq!(emitted.len(), 1);
+        assert!(strip_ansi(&emitted[0]).contains("foo"));
+    }
+
+    #[test]
+    fn flushing_printer_discards_binary_output_that_was_never_emitted() {
+        let mut printer = ColorPrinter::new();
+        let emitted = collect_emitted(|emit| {
+            let mut flushing = FlushingPrinter::new(&mut printer, emit);
+            flushing.print_line("f", 1, b"foo", &[(0, 3)]);
+            flushing.finish(true);
+        });
+
+        assert!(emitted.is_empty());
+    }
+
+    #[test]
+    fn flushing_printer_cannot_retract_an_early_flush_so_finishes_with_the_rest_instead() {
+        let mut printer = ColorPrinter::new();
+        let emitted = collect_emitted(|emit| {
+            let mut flushing = FlushingPrinter::new(&mut printer, emit);
+            // Force an early flush by pushing a single line past the
+            // threshold, rather than depending on the real constant.
+            let huge = vec![b'x'; FLUSH_THRESHOLD_BYTES];
+            flushing.print_line("f", 1, &huge, &[]);
+            flushing.print_line("f", 2, b"more", &[(0, 4)]);
+            // Binary found only after that early flush already went out -
+            // nothing left to retract, so this should still emit the rest.
+            flushing.finish(true);
+        });
+
+        assert_eq!(emitted.len(), 2);
+        assert!(strip_ansi(&emitted[1]).contains("more"));
+    }
+
+    #[test]
+    fn flushing_printer_discard_sends_nothing_regardless_of_prior_emits() {
+        let mut printer = ColorPrinter::new();
+        let emitted = collect_emitted(|emit| {
+            let mut flushing = FlushingPrinter::new(&mut printer, emit);
+            flushing.print_line("f", 1, b"foo", &[(0, 3)]);
+            flushing.discard();
+        });
+
+        assert!(emitted.is_empty());
     }
 }

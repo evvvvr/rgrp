@@ -5,7 +5,7 @@ use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 
 use crate::matcher::{Options as MatchOptions, match_line};
-use crate::printer::Printer;
+use crate::printer::{FlushingPrinter, Printer};
 
 mod classify;
 mod searchers;
@@ -66,68 +66,6 @@ pub enum Outcome {
 }
 
 type SearchResult = Result<Outcome, Error>;
-
-/// How large a printer's buffered-but-not-yet-emitted output is allowed
-/// to grow before it gets sent on early, mid-file - otherwise a single
-/// file (or archive member) with a huge number of matches would hold all
-/// of them in memory until it finally ends, regardless of how the rest
-/// of a search is already bounded.
-const FLUSH_THRESHOLD_BYTES: usize = 1 << 20; // 1 MiB
-
-/// Prints one matched line, and - if that pushes the printer's buffer
-/// past `FLUSH_THRESHOLD_BYTES` - sends what's accumulated so far on to
-/// `emit` right away rather than letting it grow further. Returns
-/// whether it actually sent anything, so the caller can remember that a
-/// *later* binary-file detection for this same file/member can no
-/// longer discard everything, only what's accumulated since.
-///
-/// Shared by `search_reader` and `search_zip`'s own line-by-line read
-/// loop, which can't go through `search_reader` since it has to parse
-/// `unzip`'s member-boundary markers out of the same byte stream.
-fn print_and_maybe_flush(
-    printer: &mut dyn Printer,
-    emit: &mut dyn FnMut(String),
-    file_path: &str,
-    line_no: u64,
-    line: &[u8],
-    matches: &[(usize, usize)],
-) -> bool {
-    printer.print(file_path, line_no, line, matches);
-
-    if printer.buffered_len() >= FLUSH_THRESHOLD_BYTES {
-        let chunk = printer.drain();
-        if !chunk.is_empty() {
-            emit(chunk);
-            return true;
-        }
-    }
-
-    false
-}
-
-/// Finishes one logical file/member's output. If it turned out binary
-/// and nothing had already been sent for it (`already_emitted`),
-/// discards whatever's buffered, since it's incomplete and shouldn't be
-/// shown; otherwise flushes and emits whatever's left - once some of a
-/// file's output has already gone out, there's no retracting it, so
-/// this finishes with the rest instead of discarding on top of what
-/// can't be undone anyway.
-fn finish_output(
-    printer: &mut dyn Printer,
-    emit: &mut dyn FnMut(String),
-    is_binary: bool,
-    already_emitted: bool,
-) {
-    if is_binary && !already_emitted {
-        printer.discard();
-        return;
-    }
-
-    let output = printer.flush();
-    if !output.is_empty() {
-        emit(output);
-    }
-}
 
 /// Knobs that change how a search behaves, independent of the pattern(s)
 /// used or which path is being searched.
@@ -228,10 +166,7 @@ fn search_reader(
     // Reused across every line of this file/member instead of allocated
     // fresh per line - `match_line` clears and refills it each call.
     let mut line_matches = Vec::new();
-    // Once a size-triggered flush has actually sent something, there's
-    // no taking it back - a *later* binary-file detection can no longer
-    // discard everything for this read, only what's accumulated since.
-    let mut already_emitted_something = false;
+    let mut flushing_printer = FlushingPrinter::new(printer, emit);
 
     let mut on_read_line = |line: &[u8]| {
         let matched = match_line(
@@ -243,10 +178,8 @@ fn search_reader(
             &mut line_matches,
         );
 
-        if matched
-            && print_and_maybe_flush(printer, emit, file_path, line_number, line, &line_matches)
-        {
-            already_emitted_something = true;
+        if matched {
+            flushing_printer.print_line(file_path, line_number, line, &line_matches);
         }
 
         line_number += 1;
@@ -263,15 +196,15 @@ fn search_reader(
 
     match res {
         Ok(ReadResult::FileRead) => {
-            finish_output(printer, emit, false, already_emitted_something);
+            flushing_printer.finish(false);
             Ok(Outcome::Done)
         }
         Ok(ReadResult::BinaryFileSkipped) => {
-            finish_output(printer, emit, true, already_emitted_something);
+            flushing_printer.finish(true);
             Ok(Outcome::BinarySkipped)
         }
         Err(err) => {
-            printer.discard();
+            flushing_printer.discard();
             Err(Error::LineRead(err))
         }
     }
@@ -314,13 +247,13 @@ mod tests {
     }
 
     impl Printer for RecordingPrinter {
-        fn print(
+        fn render_line(
             &mut self,
             _file_path: &str,
             line_no: u64,
             line: &[u8],
             matches: &[(usize, usize)],
-        ) {
+        ) -> String {
             self.print_call_count += 1;
             let line = String::from_utf8_lossy(line).into_owned();
             self.printed_lines.push(line.clone());
@@ -332,21 +265,11 @@ mod tests {
                     match_end: m.1,
                 });
             }
+            String::new()
         }
 
-        fn flush(&mut self) -> String {
+        fn reset(&mut self) {
             self.eof_count += 1;
-            String::new()
-        }
-
-        fn discard(&mut self) {}
-
-        fn buffered_len(&self) -> usize {
-            0
-        }
-
-        fn drain(&mut self) -> String {
-            String::new()
         }
     }
 
