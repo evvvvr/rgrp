@@ -69,4 +69,12 @@ impl Printer for RecordingPrinter {
     }
 
     fn discard(&mut self) {}
+
+    fn buffered_len(&self) -> usize {
+        0
+    }
+
+    fn drain(&mut self) -> String {
+        String::new()
+    }
 }

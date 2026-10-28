@@ -66,6 +66,13 @@ pub enum Outcome {
 
 type SearchResult = Result<Outcome, Error>;
 
+/// How large a printer's buffered-but-not-yet-emitted output is allowed
+/// to grow before it gets sent on early, mid-file - otherwise a single
+/// file (or archive member) with a huge number of matches would hold all
+/// of them in memory until it finally ends, regardless of how the rest
+/// of a search is already bounded.
+const FLUSH_THRESHOLD_BYTES: usize = 1 << 20; // 1 MiB
+
 /// Knobs that change how a search behaves, independent of the pattern(s)
 /// used or which path is being searched.
 #[derive(Clone, Copy, Default)]
@@ -172,6 +179,13 @@ fn search_reader(
             line,
         ) {
             printer.print(file_path, line_number, line, &m.matches);
+
+            if printer.buffered_len() >= FLUSH_THRESHOLD_BYTES {
+                let chunk = printer.drain();
+                if !chunk.is_empty() {
+                    emit(chunk);
+                }
+            }
         }
 
         line_number += 1;
@@ -268,6 +282,14 @@ mod tests {
         }
 
         fn discard(&mut self) {}
+
+        fn buffered_len(&self) -> usize {
+            0
+        }
+
+        fn drain(&mut self) -> String {
+            String::new()
+        }
     }
 
     fn run_reader(pattern: &str, input: &str) -> RecordingPrinter {

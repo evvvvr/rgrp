@@ -25,6 +25,21 @@ pub trait Printer: Send + Sync {
     /// for it instead of returning it, since it's incomplete and
     /// shouldn't be shown.
     fn discard(&mut self);
+
+    /// How many bytes are currently buffered, waiting for the next
+    /// `flush`/`discard`/`drain` - lets a caller decide when a single
+    /// file's own output has grown large enough to send on early via
+    /// `drain`, rather than letting it grow unboundedly until the file
+    /// (or archive member) finally ends.
+    fn buffered_len(&self) -> usize;
+
+    /// Takes and returns whatever is currently buffered, same as `flush`,
+    /// but - unlike `flush` - leaves per-file state (e.g. "have I already
+    /// printed this file's name?") untouched, since the file isn't done:
+    /// this is a size-triggered early flush mid-file, not an end-of-file
+    /// one, so the next chunk is still the same file's continuation
+    /// rather than a new one that needs its own header.
+    fn drain(&mut self) -> String;
 }
 
 /// Renders matches with ANSI colors (filename in purple/bold, matched text
@@ -103,6 +118,14 @@ impl Printer for ColorPrinter {
         self.has_printed_filename = false;
         self.output.clear();
     }
+
+    fn buffered_len(&self) -> usize {
+        self.output.len()
+    }
+
+    fn drain(&mut self) -> String {
+        std::mem::take(&mut self.output)
+    }
 }
 
 /// A continuation byte of a multi-byte UTF-8 sequence (`10xxxxxx`) - never
@@ -170,6 +193,14 @@ impl Printer for MonochromePrinter {
 
     fn discard(&mut self) {
         self.output.clear();
+    }
+
+    fn buffered_len(&self) -> usize {
+        self.output.len()
+    }
+
+    fn drain(&mut self) -> String {
+        std::mem::take(&mut self.output)
     }
 }
 
@@ -282,5 +313,31 @@ mod tests {
         let output = strip_ansi(&printer.flush());
 
         assert!(output.contains("second"));
+    }
+
+    #[test]
+    fn drain_keeps_per_file_state_so_the_next_chunk_skips_the_header() {
+        let mut printer = ColorPrinter::new();
+        printer.print("myfile", 1, b"foo", &[(0, 3)]);
+        let first = strip_ansi(&printer.drain());
+        assert!(first.contains("myfile"));
+
+        // Same file, next line - drain shouldn't have reset
+        // `has_printed_filename`, so this must not reprint the header.
+        printer.print("myfile", 2, b"bar", &[(0, 3)]);
+        let second = strip_ansi(&printer.flush());
+        assert!(!second.contains("myfile"));
+    }
+
+    #[test]
+    fn buffered_len_reflects_what_was_just_printed_and_drops_to_zero_after_draining() {
+        let mut printer = ColorPrinter::new();
+        assert_eq!(printer.buffered_len(), 0);
+
+        printer.print("f", 1, b"foo", &[(0, 3)]);
+        assert!(printer.buffered_len() > 0);
+
+        printer.drain();
+        assert_eq!(printer.buffered_len(), 0);
     }
 }

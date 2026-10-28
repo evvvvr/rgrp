@@ -9,7 +9,7 @@ use crate::matcher::{Options as MatchOptions, match_line};
 use crate::printer::Printer;
 
 use super::classify::CompressionFormat;
-use super::{Error, Options, Outcome, SearchResult, search_reader};
+use super::{Error, FLUSH_THRESHOLD_BYTES, Options, Outcome, SearchResult, search_reader};
 
 /// One member of a tarball, as reported by `tar -tvf`'s verbose listing.
 struct TarballEntry {
@@ -280,6 +280,13 @@ pub(super) fn search_zip(
                     line,
                     &m.matches,
                 );
+
+                if printer.buffered_len() >= FLUSH_THRESHOLD_BYTES {
+                    let chunk = printer.drain();
+                    if !chunk.is_empty() {
+                        emit(chunk);
+                    }
+                }
             }
         }
     };
