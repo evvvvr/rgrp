@@ -20,14 +20,23 @@ struct TarballEntry {
     size: u64,
 }
 
-/// Parses one line of `tar -tvf`'s verbose listing, e.g.:
-/// `-rw-r--r--  0 user  staff  1234 Aug 27 2025 some/path.txt`
+/// Parses one line of `tar -tvf`'s verbose listing. The column layout
+/// differs between the two major `tar` implementations, e.g. for the
+/// same file:
 ///
-/// This is bsdtar's column layout (permissions, links, owner, group,
-/// size, month, day, time-or-year, then the name - which may itself
-/// contain spaces, so it's whatever's left after those 8 fixed fields).
-/// GNU tar's verbose listing combines owner/group into a single
-/// `user/group` field instead, which this does not account for.
+/// ```text
+/// bsdtar (macOS):  -rw-r--r--  0 user  staff     1234 Aug 27 2025 some/path.txt
+/// GNU tar (Linux): -rw-r--r-- user/staff          1234 2025-08-27 14:27 some/path.txt
+/// ```
+///
+/// bsdtar has separate `links`/`owner`/`group` fields and a
+/// `month day time-or-year` date; GNU tar combines owner/group into one
+/// `user/group` field (always containing a `/`, which `links` - always
+/// a plain integer - never does, so that's what distinguishes the two)
+/// and always uses a `YYYY-MM-DD HH:MM` date, never falling back to a
+/// bare year the way bsdtar's `ls`-style date does. Either way, the name
+/// is whatever's left after those fixed fields, and may itself contain
+/// spaces.
 fn parse_verbose_tar_line(line: &str) -> Option<TarballEntry> {
     let mut fields = line.split_whitespace();
 
@@ -38,13 +47,25 @@ fn parse_verbose_tar_line(line: &str) -> Option<TarballEntry> {
     // `tar -xOf` will ever emit).
     let is_regular_file = fields.next()?.starts_with('-');
 
-    let _links = fields.next()?;
-    let _owner = fields.next()?;
-    let _group = fields.next()?;
-    let size: u64 = fields.next()?.parse().ok()?;
-    let _month = fields.next()?;
-    let _day = fields.next()?;
-    let _time_or_year = fields.next()?;
+    let second_field = fields.next()?;
+    let is_gnu_format = second_field.contains('/');
+
+    let size: u64 = if is_gnu_format {
+        // second_field was already the combined owner/group
+        fields.next()?.parse().ok()?
+    } else {
+        // second_field was `links`; `owner` and `group` are still ahead
+        let _owner = fields.next()?;
+        let _group = fields.next()?;
+        fields.next()?.parse().ok()?
+    };
+
+    // GNU: one `YYYY-MM-DD HH:MM` date field pair. bsdtar: `month day
+    // time-or-year`, three fields.
+    let date_time_field_count = if is_gnu_format { 2 } else { 3 };
+    for _ in 0..date_time_field_count {
+        fields.next()?;
+    }
 
     let name: String = fields.collect::<Vec<_>>().join(" ");
     if name.is_empty() {
@@ -365,7 +386,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_a_regular_file_line() {
+    fn bsdtar_parses_a_regular_file_line() {
         let entry =
             parse_verbose_tar_line("-rw-r--r--  0 voga   staff  786671 Aug 27  2025 node_modules/.package-lock.json")
                 .unwrap();
@@ -374,7 +395,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_a_file_name_with_spaces() {
+    fn bsdtar_parses_a_file_name_with_spaces() {
         let entry =
             parse_verbose_tar_line("-rw-r--r--  0 voga   staff     123 Aug 27  2025 some dir/a file.txt")
                 .unwrap();
@@ -383,7 +404,7 @@ mod tests {
     }
 
     #[test]
-    fn a_directory_always_has_zero_size_regardless_of_its_listed_size() {
+    fn bsdtar_directory_always_has_zero_size_regardless_of_its_listed_size() {
         let entry =
             parse_verbose_tar_line("drwxr-xr-x  0 voga   staff       0 Aug 27  2025 node_modules/")
                 .unwrap();
@@ -392,12 +413,67 @@ mod tests {
     }
 
     #[test]
-    fn a_symlink_always_has_zero_size_even_though_its_listed_size_is_its_target_length() {
+    fn bsdtar_symlink_always_has_zero_size_even_though_its_listed_size_is_its_target_length() {
         let entry = parse_verbose_tar_line(
             "lrwxr-xr-x  0 voga   staff      20 Aug 26  2025 node_modules/some-link -> ../apps/some-app",
         )
         .unwrap();
         assert_eq!(entry.size, 0);
+    }
+
+    #[test]
+    fn gnu_tar_parses_a_regular_file_line() {
+        // GNU tar combines owner/group into one field and uses an ISO
+        // date instead of bsdtar's `month day time-or-year`.
+        let entry = parse_verbose_tar_line(
+            "-rw-r--r-- voga/staff      786671 2025-08-27 14:27 node_modules/.package-lock.json",
+        )
+        .unwrap();
+        assert_eq!(entry.name, "node_modules/.package-lock.json");
+        assert_eq!(entry.size, 786671);
+    }
+
+    #[test]
+    fn gnu_tar_parses_a_file_name_with_spaces() {
+        let entry = parse_verbose_tar_line(
+            "-rw-r--r-- voga/staff         123 2025-08-27 14:27 some dir/a file.txt",
+        )
+        .unwrap();
+        assert_eq!(entry.name, "some dir/a file.txt");
+        assert_eq!(entry.size, 123);
+    }
+
+    #[test]
+    fn gnu_tar_directory_always_has_zero_size_regardless_of_its_listed_size() {
+        let entry = parse_verbose_tar_line(
+            "drwxr-xr-x voga/staff           0 2025-08-27 14:27 node_modules/",
+        )
+        .unwrap();
+        assert_eq!(entry.name, "node_modules/");
+        assert_eq!(entry.size, 0);
+    }
+
+    #[test]
+    fn gnu_tar_symlink_always_has_zero_size_even_though_its_listed_size_is_its_target_length() {
+        let entry = parse_verbose_tar_line(
+            "lrwxr-xr-x voga/staff          20 2025-08-26 14:27 node_modules/some-link -> ../apps/some-app",
+        )
+        .unwrap();
+        assert_eq!(entry.size, 0);
+    }
+
+    #[test]
+    fn gnu_tar_date_never_falls_back_to_a_bare_year_the_way_bsdtar_does() {
+        // Confirmed empirically against real GNU tar: even a file from
+        // years ago still gets a full `YYYY-MM-DD HH:MM`, unlike
+        // bsdtar/`ls`, which swaps the time for a bare year once a file
+        // is old enough.
+        let entry = parse_verbose_tar_line(
+            "-rw-r--r-- voga/wheel           6 2020-01-01 00:00 subdir/plain.txt",
+        )
+        .unwrap();
+        assert_eq!(entry.name, "subdir/plain.txt");
+        assert_eq!(entry.size, 6);
     }
 
     #[test]
