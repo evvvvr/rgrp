@@ -17,6 +17,7 @@ pub enum Error {
     Pattern(regex::Error),
     /// Reading a file's lines failed partway through.
     LineRead(crate::line_reader::Error),
+    GenericError,
 }
 
 impl std::fmt::Display for Error {
@@ -25,6 +26,8 @@ impl std::fmt::Display for Error {
             Error::Io(err) => write!(f, "{err}"),
             Error::Pattern(err) => write!(f, "invalid search pattern: {err}"),
             Error::LineRead(err) => write!(f, "{err}"),
+            // TO DO: revisit how we log errors
+            Error::GenericError => todo!(),
         }
     }
 }
@@ -56,6 +59,8 @@ pub enum Outcome {
     /// incomplete, so it should be discarded rather than shown.
     BinarySkipped,
 }
+
+type SearchResult = Result<Outcome, Error>;
 
 /// Knobs that change how a search behaves, independent of the pattern(s)
 /// used or which path is being searched.
@@ -94,7 +99,7 @@ pub fn search<T: Printer>(
     options: &Options,
     printer: &mut T,
     queue: &impl WorkQueue,
-) -> Result<Outcome, Error> {
+) -> SearchResult {
     // symlink_metadata (unlike metadata) reports the entry's own type instead
     // of following the symlink, so this check actually catches symlinks
     let metadata = fs::symlink_metadata(path)?;
@@ -122,8 +127,10 @@ pub fn search<T: Printer>(
     if let Option::Some(extension) = path.extension() {
         if extension == "zip" {
             return search_zip(patterns, path, options, printer);
-        } else if extension == "gz" {
+        } else if extension == "gz" || extension == "bz2" || extension == "bz" {
             // additional check if it's a compressed tarball
+            // compressed tarball: tgz, tbz, tbz2, txz, tzst, Z, tbz2, .tar.xz,
+            // .tar.zst, .tar.lz, .tar.lzma, .tar.lzo, .tar.Z
             if let Option::Some(filename) = path.file_stem().unwrap().to_str() {
                 if filename.ends_with(".tar") {
                     let listing = Command::new("tar").arg("-tf").arg(path).output()?;
@@ -133,34 +140,19 @@ pub fn search<T: Printer>(
                             .map(|s| s.to_string())
                             .collect();
 
+                    let mut results: Vec<SearchResult> = Vec::new();
                     for entry in entry_names {
-                        let mut cmd = Command::new("tar")
-                            .arg("-xOf")
-                            .arg(path)
-                            .arg(entry.clone())
-                            .stdin(Stdio::piped())
-                            .stdout(Stdio::piped())
-                            .spawn()
-                            .unwrap();
-
-                        let child_output = cmd.stdout.take().unwrap();
-                        let archive_prefixed_file_path =
-                            path.to_string_lossy().to_string() + ":" + &entry;
-
-                        let _ = search_reader(
-                            patterns,
-                            &archive_prefixed_file_path,
-                            options,
-                            child_output,
-                            printer,
+                        let res = search_compressed_tarball_entry(
+                            patterns, path, &entry, options, printer,
                         );
-
-                        let _ = cmd.wait();
-                        printer.on_eof();
+                        results.push(res);
                     }
 
-                    //TODO: fix this
-                    return Ok(Outcome::Done);
+                    if results.iter().find(|result| result.is_err()).is_some() {
+                        return SearchResult::Err(Error::GenericError);
+                    }
+
+                    return SearchResult::Ok(Outcome::Done);
                 } else {
                     println!("GZ")
                 }
@@ -171,12 +163,48 @@ pub fn search<T: Printer>(
     search_file(patterns, path, options, printer)
 }
 
+// Searcher is: how to check if file mathces and how to search it
+fn search_compressed_tarball_entry<T: Printer>(
+    patterns: &[Regex],
+    path: &Path,
+    entry: &str,
+    options: &Options,
+    printer: &mut T,
+) -> SearchResult {
+    println!("{}", entry);
+    let mut cmd = Command::new("tar")
+        .arg("-xOf")
+        .arg(path)
+        .arg(entry)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let child_output = cmd.stdout.take().unwrap();
+    let archive_prefixed_file_path = path.to_string_lossy().to_string() + ":" + entry;
+
+    let res = search_reader(
+        patterns,
+        &archive_prefixed_file_path,
+        options,
+        child_output,
+        printer,
+    );
+
+    let _ = cmd.wait();
+
+    printer.on_eof();
+
+    res
+}
+
 fn search_zip<T: Printer>(
     patterns: &[Regex],
     path: &Path,
     options: &Options,
     printer: &mut T,
-) -> Result<Outcome, Error> {
+) -> SearchResult {
     //  ZIP stdout:
     //  Archive:  input/node_modules.zip
     //extracting: ./emil_claims/node_modules/
@@ -294,7 +322,7 @@ fn search_file<T: Printer>(
     file_path: &Path,
     options: &Options,
     printer: &mut T,
-) -> Result<Outcome, Error> {
+) -> SearchResult {
     let file = fs::File::open(file_path)?;
     search_reader(
         patterns,

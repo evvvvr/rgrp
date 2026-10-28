@@ -91,6 +91,7 @@ fn main() -> ExitCode {
             search::Error::LineRead(err) => {
                 eprintln!("{PROGRAM_NAME}:{path} error reading lines: {err}")
             }
+            search::Error::GenericError => todo!("fix"),
         }
     };
 
