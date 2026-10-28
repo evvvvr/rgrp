@@ -5,11 +5,22 @@ edition = "2024"
 license = "MIT"
 
 [dependencies]
-clap = { version = "4.6.7", features = ["derive"] }
-crossbeam = "0.8.5"
+clap = { version = "4.6.7", default-features = false, features = ["derive", "std", "help", "usage", "error-context"] }
+crossbeam-queue = "0.3.14"
 ctrlc = "3.5.2"
 owo-colors = "4.4.0"
 regex = "1.13.1"
 
 [dev-dependencies]
 tempfile = "3.23.0"
+
+[profile.release]
+# Debug symbols aren't needed in the shipped binary - panic messages are
+# plain strings, not symbol-table lookups, so this doesn't affect them.
+strip = true
+lto = "thin"
+codegen-units = 1
+# NOT panic = "abort": the worker pool in concurrency.rs relies on
+# catch_unwind to isolate one path's panic (e.g. a missing external
+# tool for -z) from every other worker - abort would turn that back
+# into a whole-process crash instead of a per-path reported error.

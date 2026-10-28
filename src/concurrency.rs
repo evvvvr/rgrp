@@ -1,4 +1,4 @@
-use crossbeam::queue::SegQueue;
+use crossbeam_queue::SegQueue;
 use regex::bytes::Regex;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
