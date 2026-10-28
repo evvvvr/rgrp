@@ -6,7 +6,7 @@ use owo_colors::OwoColorize;
 ///
 /// One printer instance is created per file, so implementations can hold
 /// per-file state (e.g. "have I already printed this file's name?").
-pub trait Printer {
+pub trait Printer: Send + Sync {
     /// Reports a single line that had at least one match. `matches` holds
     /// every match on the line, sorted by start offset, so implementations
     /// can render the whole line in one shot instead of being called once
@@ -16,6 +16,8 @@ pub trait Printer {
     /// Called once a file has been read to the end. Most printers don't
     /// need this; it exists for ones that need to know when a file is done.
     fn on_eof(&mut self);
+
+    fn into_output(self: Box<Self>) -> String;
 }
 
 /// A printer that builds up its output in memory instead of writing it as
@@ -97,6 +99,10 @@ impl Printer for ColorPrinter {
     fn on_eof(&mut self) {
         self.has_printed_filename = false;
     }
+
+    fn into_output(self: Box<Self>) -> String {
+        self.output
+    }
 }
 
 /// A continuation byte of a multi-byte UTF-8 sequence (`10xxxxxx`) - never
@@ -126,11 +132,11 @@ fn snap_end_to_char_boundary(line: &[u8], mut idx: usize) -> usize {
     idx
 }
 
-impl BufferedOutput for ColorPrinter {
-    fn into_output(self) -> String {
-        self.output
-    }
-}
+// impl BufferedOutput for ColorPrinter {
+//     fn into_output(self) -> String {
+//         self.output
+//     }
+// }
 
 /// Renders matches as plain `path: line` text, no color codes - for
 /// output that isn't going to a terminal (piped to a file, `NO_COLOR`, etc.).
@@ -167,13 +173,17 @@ impl Printer for MonochromePrinter {
     fn on_eof(&mut self) {
         // nop
     }
-}
 
-impl BufferedOutput for MonochromePrinter {
-    fn into_output(self) -> String {
+    fn into_output(self: Box<Self>) -> String {
         self.output
     }
 }
+
+// impl BufferedOutput for MonochromePrinter {
+//     fn into_output(self) -> String {
+//         self.output
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
@@ -213,7 +223,7 @@ mod tests {
             .collect();
 
         printer.print("f", 1, line, &matches);
-        let output = strip_ansi(&printer.into_output());
+        let output = strip_ansi(&Box::new(printer).into_output());
 
         assert!(output.contains("foo bar"));
         assert!(!output.contains("foooo"));
@@ -234,7 +244,7 @@ mod tests {
         assert_eq!(matches[0], (2, 3));
 
         printer.print("f", 1, &line, &matches);
-        let output = strip_ansi(&printer.into_output());
+        let output = strip_ansi(&Box::new(printer).into_output());
 
         assert_eq!(output.matches('\u{FFFD}').count(), 0);
         assert!(output.contains("aéb"));
@@ -255,7 +265,7 @@ mod tests {
         assert_eq!(matches[0], (1, 2));
 
         printer.print("f", 1, &line, &matches);
-        let output = strip_ansi(&printer.into_output());
+        let output = strip_ansi(&Box::new(printer).into_output());
 
         // The whole character must survive, highlighted as one unit,
         // instead of the match being silently dropped by an end boundary

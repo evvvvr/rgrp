@@ -63,6 +63,10 @@ impl Printer for RecordingPrinter {
     fn on_eof(&mut self) {
         self.0.lock().unwrap().eof_count += 1;
     }
+
+    fn into_output(self: Box<Self>) -> String {
+        String::new()
+    }
 }
 
 impl BufferedOutput for RecordingPrinter {
