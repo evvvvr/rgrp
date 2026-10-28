@@ -74,6 +74,61 @@ type SearchResult = Result<Outcome, Error>;
 /// of a search is already bounded.
 const FLUSH_THRESHOLD_BYTES: usize = 1 << 20; // 1 MiB
 
+/// Prints one matched line, and - if that pushes the printer's buffer
+/// past `FLUSH_THRESHOLD_BYTES` - sends what's accumulated so far on to
+/// `emit` right away rather than letting it grow further. Returns
+/// whether it actually sent anything, so the caller can remember that a
+/// *later* binary-file detection for this same file/member can no
+/// longer discard everything, only what's accumulated since.
+///
+/// Shared by `search_reader` and `search_zip`'s own line-by-line read
+/// loop, which can't go through `search_reader` since it has to parse
+/// `unzip`'s member-boundary markers out of the same byte stream.
+fn print_and_maybe_flush(
+    printer: &mut dyn Printer,
+    emit: &mut dyn FnMut(String),
+    file_path: &str,
+    line_no: u64,
+    line: &[u8],
+    matches: &[(usize, usize)],
+) -> bool {
+    printer.print(file_path, line_no, line, matches);
+
+    if printer.buffered_len() >= FLUSH_THRESHOLD_BYTES {
+        let chunk = printer.drain();
+        if !chunk.is_empty() {
+            emit(chunk);
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Finishes one logical file/member's output. If it turned out binary
+/// and nothing had already been sent for it (`already_emitted`),
+/// discards whatever's buffered, since it's incomplete and shouldn't be
+/// shown; otherwise flushes and emits whatever's left - once some of a
+/// file's output has already gone out, there's no retracting it, so
+/// this finishes with the rest instead of discarding on top of what
+/// can't be undone anyway.
+fn finish_output(
+    printer: &mut dyn Printer,
+    emit: &mut dyn FnMut(String),
+    is_binary: bool,
+    already_emitted: bool,
+) {
+    if is_binary && !already_emitted {
+        printer.discard();
+        return;
+    }
+
+    let output = printer.flush();
+    if !output.is_empty() {
+        emit(output);
+    }
+}
+
 /// Knobs that change how a search behaves, independent of the pattern(s)
 /// used or which path is being searched.
 #[derive(Clone, Copy, Default)]
@@ -173,7 +228,7 @@ fn search_reader(
     // Reused across every line of this file/member instead of allocated
     // fresh per line - `match_line` clears and refills it each call.
     let mut line_matches = Vec::new();
-    // Once a size-triggered `drain` has actually sent something, there's
+    // Once a size-triggered flush has actually sent something, there's
     // no taking it back - a *later* binary-file detection can no longer
     // discard everything for this read, only what's accumulated since.
     let mut already_emitted_something = false;
@@ -188,16 +243,10 @@ fn search_reader(
             &mut line_matches,
         );
 
-        if matched {
-            printer.print(file_path, line_number, line, &line_matches);
-
-            if printer.buffered_len() >= FLUSH_THRESHOLD_BYTES {
-                let chunk = printer.drain();
-                if !chunk.is_empty() {
-                    already_emitted_something = true;
-                    emit(chunk);
-                }
-            }
+        if matched
+            && print_and_maybe_flush(printer, emit, file_path, line_number, line, &line_matches)
+        {
+            already_emitted_something = true;
         }
 
         line_number += 1;
@@ -214,26 +263,11 @@ fn search_reader(
 
     match res {
         Ok(ReadResult::FileRead) => {
-            let output = printer.flush();
-            if !output.is_empty() {
-                emit(output);
-            }
+            finish_output(printer, emit, false, already_emitted_something);
             Ok(Outcome::Done)
         }
         Ok(ReadResult::BinaryFileSkipped) => {
-            if already_emitted_something {
-                // Some of this file's matches were already sent on by
-                // the size threshold above, before binary content was
-                // found later in the same file - there's no retracting
-                // that, so finish with whatever's left instead of
-                // discarding it on top of what can't be undone anyway.
-                let output = printer.flush();
-                if !output.is_empty() {
-                    emit(output);
-                }
-            } else {
-                printer.discard();
-            }
+            finish_output(printer, emit, true, already_emitted_something);
             Ok(Outcome::BinarySkipped)
         }
         Err(err) => {

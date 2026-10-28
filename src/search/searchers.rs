@@ -9,7 +9,9 @@ use crate::matcher::{Options as MatchOptions, match_line};
 use crate::printer::Printer;
 
 use super::classify::CompressionFormat;
-use super::{Error, FLUSH_THRESHOLD_BYTES, Options, Outcome, SearchResult, search_reader};
+use super::{
+    Error, Options, Outcome, SearchResult, finish_output, print_and_maybe_flush, search_reader,
+};
 
 /// One member of a tarball, as reported by `tar -tvf`'s verbose listing.
 struct TarballEntry {
@@ -360,14 +362,12 @@ pub(super) fn search_zip(
             // of it was already sent on early, in which case finish
             // with what's left instead of discarding on top of what
             // can't be undone anyway.
-            if current_member_is_binary && !current_member_already_flushed {
-                printer.discard();
-            } else {
-                let output = printer.flush();
-                if !output.is_empty() {
-                    emit(output);
-                }
-            }
+            finish_output(
+                printer,
+                emit,
+                current_member_is_binary,
+                current_member_already_flushed,
+            );
             // beginning of file output
             current_file_path = member_names.pop_front().unwrap_or_default();
             current_file_line_no = 0;
@@ -393,21 +393,17 @@ pub(super) fn search_zip(
                 &mut line_matches,
             );
 
-            if matched {
-                printer.print(
+            if matched
+                && print_and_maybe_flush(
+                    printer,
+                    emit,
                     &archive_prefixed_file_path,
                     current_file_line_no,
                     line,
                     &line_matches,
-                );
-
-                if printer.buffered_len() >= FLUSH_THRESHOLD_BYTES {
-                    let chunk = printer.drain();
-                    if !chunk.is_empty() {
-                        current_member_already_flushed = true;
-                        emit(chunk);
-                    }
-                }
+                )
+            {
+                current_member_already_flushed = true;
             }
         }
     };
@@ -433,14 +429,12 @@ pub(super) fn search_zip(
             // The last member in the archive never hit another
             // "extracting:"/"inflating:" marker to flush it, so do that
             // here instead.
-            if current_member_is_binary && !current_member_already_flushed {
-                printer.discard();
-            } else {
-                let output = printer.flush();
-                if !output.is_empty() {
-                    emit(output);
-                }
-            }
+            finish_output(
+                printer,
+                emit,
+                current_member_is_binary,
+                current_member_already_flushed,
+            );
             Ok(Outcome::Done)
         }
         Ok(ReadResult::BinaryFileSkipped) => {
