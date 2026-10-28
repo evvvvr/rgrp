@@ -44,6 +44,26 @@ impl CompressionFormat {
             Self::Compress => ("uncompress", "-c"),
         }
     }
+
+    /// The exit code this decompressor's own docs define as "a warning
+    /// occurred, but the output is still correct" rather than a real
+    /// failure - gzip and xz both document exit code 2 this way (e.g.
+    /// harmless trailing garbage after the compressed stream, confirmed
+    /// directly against a real gzip: "decompression OK, trailing
+    /// garbage ignored", exit 2). `lzma` is the same family as `xz`
+    /// (often literally the same binary under a different name) and
+    /// documented the same way.
+    ///
+    /// Not every decompressor shares this: bzip2's own man page defines
+    /// exit code 2 as "a corrupt compressed file" - a real failure, not
+    /// a warning - so this intentionally isn't a blanket rule for every
+    /// format.
+    pub(super) fn tolerable_warning_exit_code(self) -> Option<i32> {
+        match self {
+            Self::Gzip | Self::Xz | Self::Lzma => Some(2),
+            Self::Bzip2 | Self::Zstd | Self::Lzip | Self::Lzop | Self::Compress => None,
+        }
+    }
 }
 
 /// What kind of file a path looks like, decided from its extension alone.

@@ -266,7 +266,25 @@ pub fn spawn_workers(
                     let mut print_guard: Option<std::sync::MutexGuard<'_, ()>> = None;
                     let mut emit = |output: String| {
                         if print_guard.is_none() {
-                            print_guard = Some(shared_state.print_lock.lock().unwrap());
+                            // `unwrap_or_else(PoisonError::into_inner)`
+                            // rather than `.unwrap()`: this Mutex only
+                            // ever guards `()`, never real data that a
+                            // panic mid-hold could leave inconsistent,
+                            // so recovering from poisoning is always
+                            // safe. Without this, one worker panicking
+                            // while holding the lock would poison it
+                            // for good, and every other worker's next
+                            // `.lock()` on it would panic too - turning
+                            // one isolated panic into a cascade of
+                            // spurious WorkerPanicked failures for the
+                            // rest of the run, defeating the isolation
+                            // catch_unwind exists for.
+                            print_guard = Some(
+                                shared_state
+                                    .print_lock
+                                    .lock()
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner),
+                            );
                         }
                         let _ = output_tx.send(Result::Ok(output));
                     };

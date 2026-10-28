@@ -83,8 +83,26 @@ fn parse_verbose_tar_line(line: &str) -> Option<TarballEntry> {
 /// corrupted archive or a decompression failure gets reported as if
 /// nothing had gone wrong, just with less (or no) output found than
 /// there should have been.
-fn check_exit_status(program: &str, status: std::process::ExitStatus) -> Result<(), Error> {
-    if status.success() {
+///
+/// `tolerable_warning_code`, if given, is a code the program documents
+/// as "a warning occurred, but the output is still correct" rather than
+/// a real failure - e.g. gzip and xz both exit 2 for harmless trailing
+/// garbage after the compressed stream. Not every program has one of
+/// these, and the code that means "warning" for one program can mean
+/// something else entirely for another (bzip2's own exit code 2 means
+/// a corrupt file - a real failure), so this is opt-in per call site
+/// rather than a single blanket rule.
+fn check_exit_status(
+    program: &str,
+    status: std::process::ExitStatus,
+    tolerable_warning_code: Option<i32>,
+) -> Result<(), Error> {
+    // `tolerable_warning_code.is_some_and(...)` rather than a plain
+    // `status.code() == tolerable_warning_code`: a signal-terminated
+    // process has no code at all (`status.code()` is `None`), and that
+    // must never match a `None` "no warning code applies here" either.
+    if status.success() || tolerable_warning_code.is_some_and(|code| status.code() == Some(code))
+    {
         return Ok(());
     }
     Err(Error::Io(io::Error::other(format!(
@@ -92,12 +110,11 @@ fn check_exit_status(program: &str, status: std::process::ExitStatus) -> Result<
     ))))
 }
 
-/// Same idea as `check_exit_status`, but tolerates unzip's documented
-/// exit code 1 ("one or more warning errors were found, but processing
-/// completed successfully") instead of treating it as a real failure -
-/// a perfectly fine zip occasionally triggers it for cosmetic reasons
-/// (e.g. a Windows-made archive using backslash path separators)
-/// without anything actually having gone wrong.
+/// `check_exit_status` for unzip specifically, which documents exit code
+/// 1 as "one or more warning errors were found, but processing completed
+/// successfully" - a perfectly fine zip occasionally triggers it for
+/// cosmetic reasons (e.g. a Windows-made archive using backslash path
+/// separators) without anything actually having gone wrong.
 fn check_unzip_exit_status(status: std::process::ExitStatus) -> Result<(), Error> {
     if status.success() || status.code() == Some(1) {
         return Ok(());
@@ -107,7 +124,7 @@ fn check_unzip_exit_status(status: std::process::ExitStatus) -> Result<(), Error
 
 fn list_tarball_entries(path: &Path) -> Result<Vec<TarballEntry>, Error> {
     let listing = Command::new("tar").arg("-tvf").arg(path).output()?;
-    check_exit_status("tar", listing.status)?;
+    check_exit_status("tar", listing.status, None)?;
 
     // A line this parser can't make sense of isn't safe to just skip:
     // `tar -xOf`'s single shared stdout stream still contains that
@@ -160,13 +177,16 @@ pub(super) fn search_tarball(
     // of a generic placeholder) so the caller finds out what actually
     // went wrong, not just that something did.
     let mut first_error: Option<Error> = None;
+    // Computed once rather than on every entry - the archive's own
+    // path never changes across the loop, only each entry's name does.
+    let archive_path = path.to_string_lossy();
 
     for entry in entries {
         if entry.size == 0 {
             continue;
         }
 
-        let archive_prefixed_file_path = path.to_string_lossy().to_string() + ":" + &entry.name;
+        let archive_prefixed_file_path = format!("{archive_path}:{}", entry.name);
 
         // Bound to exactly this member's byte count, so `search_reader`
         // (and the `read_lines` it streams through internally) never
@@ -213,7 +233,7 @@ pub(super) fn search_tarball(
     drop(child_output);
 
     let status = cmd.wait()?;
-    if let Err(err) = check_exit_status("tar", status) {
+    if let Err(err) = check_exit_status("tar", status, None) {
         first_error.get_or_insert(err);
     }
 
@@ -258,7 +278,7 @@ pub(super) fn search_compressed(
     let status = cmd.wait()?;
 
     res.and_then(|outcome| {
-        check_exit_status(program, status)?;
+        check_exit_status(program, status, format.tolerable_warning_exit_code())?;
         Ok(outcome)
     })
 }
@@ -302,9 +322,15 @@ pub(super) fn search_zip(
 
     let mut child_output = cmd.stdout.take().expect("just configured with Stdio::piped()");
 
+    // Computed once rather than on every member boundary - the
+    // archive's own path never changes, only each member's name does.
+    let archive_path = path.to_string_lossy();
     let mut current_file_path = String::new();
     let mut archive_prefixed_file_path = String::new();
-    let mut current_file_line_no = 1;
+    // Incremented *before* use on every content line (see below), so
+    // this starts at 0 rather than 1 - otherwise the first line of
+    // every member would be reported as line 2, not line 1.
+    let mut current_file_line_no = 0;
     // Whether the member currently being read looks binary - set the
     // first time one of its lines carries a null byte, and cleared
     // at the next member boundary. Scoped to the member rather than
@@ -344,11 +370,10 @@ pub(super) fn search_zip(
             }
             // beginning of file output
             current_file_path = member_names.pop_front().unwrap_or_default();
-            current_file_line_no = 1;
+            current_file_line_no = 0;
             current_member_is_binary = false;
             current_member_already_flushed = false;
-            archive_prefixed_file_path =
-                path.to_string_lossy().to_string() + ":" + &current_file_path;
+            archive_prefixed_file_path = format!("{archive_path}:{current_file_path}");
         } else {
             current_file_line_no += 1;
 
