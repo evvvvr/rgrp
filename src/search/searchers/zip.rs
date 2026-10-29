@@ -161,3 +161,66 @@ pub(in crate::search) fn search_zip(
 
     Ok(Outcome::Done)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_a_stored_regular_file_line() {
+        let entry =
+            parse_verbose_zip_line("      18  Stored       18   0% 10-29-2026 09:32 b8c5e2e7  sub/a.txt")
+                .unwrap();
+        assert_eq!(entry.name, "sub/a.txt");
+        assert_eq!(entry.size, 18);
+    }
+
+    #[test]
+    fn parses_a_deflated_regular_file_line() {
+        let entry = parse_verbose_zip_line(
+            "      61  Defl:N       60   2% 10-29-2026 09:37 25a34fc3  adversarial/a.txt",
+        )
+        .unwrap();
+        assert_eq!(entry.name, "adversarial/a.txt");
+        assert_eq!(entry.size, 61);
+    }
+
+    #[test]
+    fn parses_a_file_name_with_spaces() {
+        let entry = parse_verbose_zip_line(
+            "       1  Stored        1   0% 10-29-2026 09:33 8cdc1683  some dir/a file.txt",
+        )
+        .unwrap();
+        assert_eq!(entry.name, "some dir/a file.txt");
+        assert_eq!(entry.size, 1);
+    }
+
+    #[test]
+    fn directory_entry_has_zero_length() {
+        let entry =
+            parse_verbose_zip_line("       0  Stored        0   0% 10-29-2026 09:32 00000000  sub/")
+                .unwrap();
+        assert_eq!(entry.name, "sub/");
+        assert_eq!(entry.size, 0);
+    }
+
+    #[test]
+    fn an_unparseable_line_is_skipped() {
+        assert!(parse_verbose_zip_line("").is_none());
+        assert!(parse_verbose_zip_line("not a zip listing line").is_none());
+    }
+
+    #[test]
+    fn is_zip_totals_line_true_for_the_trailing_totals_line() {
+        assert!(is_zip_totals_line(
+            "      89               88   1%                            3 files"
+        ));
+    }
+
+    #[test]
+    fn is_zip_totals_line_false_for_a_real_entry_line() {
+        assert!(!is_zip_totals_line(
+            "      18  Stored       18   0% 10-29-2026 09:32 b8c5e2e7  sub/a.txt"
+        ));
+    }
+}
