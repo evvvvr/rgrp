@@ -41,7 +41,7 @@ Basically roughly matching ripgrep abilities.
   Print lines that *don't* match instead of lines that do.
 
 - `-j, --threads <N>`
-  Number of worker threads to use. Defaults to `0`, which picks a count automatically based on available parallelism.
+  Number of worker threads to use. Defaults to `0`, which picks a count automatically based on available parallelism. With more than one thread (the default on any multi-core machine), output across different files/paths is **not** guaranteed to come out in the same order as the input paths, or even in a consistent order between runs - whichever worker finishes a file first gets to print it first. Pass `-j 1` if you need deterministic, strictly sequential output, at the cost of giving up parallelism.
 
 - `-a, --text`
   Search binary files as if they were text, instead of skipping them (the default).
