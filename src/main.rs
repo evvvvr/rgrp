@@ -12,7 +12,7 @@ use rgrp::search;
 const PROGRAM_NAME: &str = "rgrp";
 
 #[derive(Parser)]
-#[command(name=PROGRAM_NAME)]
+#[command(name=PROGRAM_NAME, version)]
 struct Cli {
     /// A pattern to search for (may be given multiple times).
     #[arg(short = 'e', long = "regexp", value_name = "PATTERN")]
