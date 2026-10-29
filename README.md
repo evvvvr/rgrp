@@ -55,15 +55,27 @@ Basically roughly matching ripgrep abilities.
 
 # How it works
 
-- Read file line-by-line into a buffer.
-- Run regex vs extracted lines.
+- Read a file line-by-line into a buffer.
+- Run every pattern against each extracted line.
 - Repeat.
 
-Only single-line pattern expressions bc. of this.
+Only single-line pattern expressions, because of this.
+
+A zip/tar archive or a compressed file is unpacked through the matching
+external tool (`tar`, `unzip`, `gzip`, ...) instead of a bundled decoder,
+and streamed through the same line-by-line matching in one pass, member
+by member, rather than loading the whole archive into memory first.
 
 For parallelism/concurrency:
-- launch separate traversal and matching jobs capped by max jobs limit.
-- collect output
+- A fixed-size pool of worker threads (sized by `-j`/`--threads`, or
+  available parallelism by default) all pull from one shared queue of
+  paths.
+- Popping a directory expands it back into that same queue instead of
+  recursing directly, so any worker can pick up its entries next.
+  Popping a file searches it line-by-line as above.
+- Each file/archive member's output streams back to the main thread as
+  it's found, rather than after the whole path finishes, and output
+  from one path can't be interleaved with another's mid-stream.
 
 ## Performance
 
