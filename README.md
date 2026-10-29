@@ -1,9 +1,11 @@
 # rgrp (Rust grep)
 
 Yet another `grep` rewrite in Rust.
-Just a hobby 100% artisanal hand-coded learning project.
+Allows to search inside zip/tar archives and compressed files.
+Just a hobby 80% artisanal hand-coded learning project.
 
-Allows to search inside tarballs and compressed files.
+The core of it is written by hand.
+AI is used to find and fix bugs (especially concurrency/mem usage related); generate tests; generate docs; performance testing.
 
 ## To Do:
 - follow symlinks (avoid infinite loops)
