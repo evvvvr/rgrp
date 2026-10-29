@@ -1,7 +1,7 @@
 use std::io;
 use std::io::prelude::*;
 
-const BUFFER_SIZE_BYTES: usize = 65536; // 64 KB
+const BUFFER_SIZE_BYTES: usize = 1 << 16; // 64 KiB
 
 #[derive(Debug, PartialEq)]
 pub enum ReadResult {
@@ -28,18 +28,16 @@ pub fn read_lines(
 ) -> io::Result<ReadResult> {
     let mut buffer = [0; BUFFER_SIZE_BYTES];
 
-    // Bytes of the line currently being assembled. Lives outside the loop
-    // so a line split across two reads survives into the next chunk -
-    // ranges into `buffer` alone wouldn't, since `buffer` gets overwritten
-    // by the next `read` call.
+    // Bytes of the line being assembled. Lives outside the loop so a
+    // line split across two reads survives into the next chunk.
     let mut line: Vec<u8> = Vec::new();
 
     loop {
         let res = reader.read(&mut buffer);
         match res {
             Ok(0) => {
-                // Done reading. Whatever's left in `line` is the last line,
-                // if the file didn't end with a trailing '\n'.
+                // Whatever's left in `line` is the last line, if the
+                // file didn't end with a trailing '\n'.
                 if !line.is_empty() {
                     if options.crlf && line.last() == Some(&b'\r') {
                         line.pop();
@@ -51,10 +49,9 @@ pub fn read_lines(
             }
             Ok(bytes_read) => {
                 if options.skip_on_null && buffer[..bytes_read].contains(&0) {
-                    // Check the whole chunk for a null byte before handing
-                    // any of its lines to `on_line_read` - otherwise a null
-                    // byte later in the chunk would still let lines earlier
-                    // in the same chunk reach the caller first.
+                    // Checked before handing any line in this chunk
+                    // to `on_line_read`, so an earlier line in the
+                    // same chunk never reaches the caller first.
                     return Ok(ReadResult::BinaryFileSkipped);
                 }
 
@@ -65,27 +62,17 @@ pub fn read_lines(
 
                     if b == b'\n' {
                         if line.is_empty() {
-                            // Fast path: nothing carried over from a
-                            // previous read, so this line lives entirely in
-                            // `buffer` - hand the closure a slice straight
-                            // into it instead of paying for a copy through
-                            // `line` that the slow path below needs only
-                            // for a line split across two reads.
+                            // Fast path: this line lives entirely in
+                            // `buffer`, so hand the closure a slice
+                            // into it instead of copying through `line`.
                             let mut end = current_byte_index;
                             if options.crlf && end > line_start && buffer[end - 1] == b'\r' {
                                 end -= 1;
                             }
                             on_line_read(&buffer[line_start..end]);
                         } else {
-                            // everything since the last boundary, up to (not
-                            // including) this newline, completes the line
                             line.extend_from_slice(&buffer[line_start..current_byte_index]);
                             if options.crlf && line.last() == Some(&b'\r') {
-                                // `line` holds the whole assembled line by
-                                // this point regardless of how many reads
-                                // it took to get here, so this also covers
-                                // a '\r' left over from the end of a
-                                // previous chunk.
                                 line.pop();
                             }
                             on_line_read(&line);
@@ -95,9 +82,8 @@ pub fn read_lines(
                     }
                 }
 
-                // leftover bytes after the last newline in this chunk (or
-                // the whole chunk, if it had no newline at all) carry over
-                // into `line` to be completed by the next read
+                // Leftover bytes after the last newline carry over
+                // into `line`, to be completed by the next read.
                 line.extend_from_slice(&buffer[line_start..bytes_read]);
             }
             Err(err) => {
@@ -132,9 +118,6 @@ mod tests {
 
     #[test]
     fn a_line_longer_than_one_buffer_is_assembled_across_reads() {
-        // bigger than BUFFER_SIZE_BYTES, so reading it takes more than one
-        // `read` call - the line only comes out whole if bytes left over
-        // from one chunk are correctly carried into the next
         let long_line_len = BUFFER_SIZE_BYTES * 2 + 100;
         let mut input_bytes = vec![b'x'; long_line_len];
         input_bytes.push(b'\n');
@@ -161,9 +144,6 @@ mod tests {
 
     #[test]
     fn skips_rest_of_file_once_a_null_byte_is_seen() {
-        // the null byte lands before the first newline, so no line has
-        // completed yet when it's hit - reporting nothing is the correct
-        // "this looks binary, don't search it" outcome
         let mut lines: Vec<Vec<u8>> = Vec::new();
         let mut input = Cursor::new(b"aa 11\x00 bc\nmore\n");
         let res = read_lines(
@@ -268,11 +248,8 @@ mod tests {
 
     #[test]
     fn crlf_strips_the_trailing_cr_even_when_split_across_a_read_boundary() {
-        // The '\r' lands as the very last byte of the first `read()` call
-        // (the buffer fills exactly), so the '\n' that completes the line
-        // only shows up in the next chunk - the strip must apply to the
-        // carried-over '\r', not just one still sitting in the same chunk
-        // as the '\n'.
+        // The '\r' lands as the last byte of the first `read()` call,
+        // so the '\n' only shows up in the next chunk.
         let mut input_bytes = vec![b'x'; BUFFER_SIZE_BYTES - 1];
         input_bytes.push(b'\r');
         input_bytes.push(b'\n');

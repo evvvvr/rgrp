@@ -18,14 +18,11 @@ pub enum Error {
     /// A filesystem operation failed (missing path, permissions, etc.).
     Io(std::io::Error),
     /// Reading a file's lines failed partway through - distinct from
-    /// `Io` only in the message `main.rs` prints for it (which operation
-    /// was underway), not in the underlying error itself.
+    /// `Io` only in the message `main.rs` prints for it.
     LineRead(std::io::Error),
     /// The worker searching this path panicked (e.g. an external tool
-    /// like `tar`/`unzip`/a decompressor failed to start) - caught at
-    /// the worker-pool level rather than left to unwind, so one path's
-    /// crash can't deadlock every other worker waiting on it to finish,
-    /// or silently vanish without being reported.
+    /// failed to start) - caught at the worker-pool level so one
+    /// path's crash can't deadlock the others.
     WorkerPanicked(String),
 }
 
@@ -51,17 +48,11 @@ impl From<std::io::Error> for Error {
 /// whether to keep whatever output a printer buffered for it.
 #[derive(Debug, PartialEq)]
 pub enum Outcome {
-    /// Finished normally (including a directory, symlink, or anything
-    /// else that never reached a printer); any buffered output is
-    /// complete and should be kept.
+    /// Finished normally; any buffered output is complete and kept.
     Done,
-    /// The file looked binary partway through. Whatever a printer had
-    /// buffered but not yet sent at that point is discarded, since it's
-    /// incomplete - but if some of this file's output had already been
-    /// sent on earlier (a large file can cross the size-triggered flush
-    /// threshold before any binary content is found later in the same
-    /// file), that part can't be retracted, so it's shown rather than
-    /// compounding an already-partial result with an inconsistent gap.
+    /// The file looked binary partway through. Output not yet sent is
+    /// discarded; output already sent earlier (past the flush
+    /// threshold) can't be retracted, so it's shown anyway.
     BinarySkipped,
 }
 
@@ -74,35 +65,30 @@ pub struct Options {
     /// When true, report lines that *don't* match any pattern instead of
     /// lines that do.
     pub invert_matches: bool,
-    /// When true, a file that looks binary is searched as text instead of
-    /// being skipped. Mirrors ripgrep's `-a`/`--text`.
+    /// When true, a file that looks binary is searched as text instead
+    /// of skipped. Mirrors ripgrep's `-a`/`--text`.
     pub search_binary: bool,
-    /// When true, a trailing `\r` before the `\n` is treated as part of the
-    /// line terminator and stripped, rather than as part of the line
-    /// content. Mirrors ripgrep's `--crlf`.
+    /// When true, a trailing `\r` before `\n` is stripped as part of
+    /// the line terminator. Mirrors ripgrep's `--crlf`.
     pub crlf: bool,
-    /// When true, zip/tar archives and gzip/bzip2/xz/etc-compressed files
-    /// are unpacked and searched inside; when false (the default), they're
-    /// read as opaque binary data like any other file - and typically
-    /// skipped as binary, same as ripgrep's default. Mirrors ripgrep's
-    /// `-z`/`--search-zip`.
+    /// When true, zip/tar archives and compressed files are unpacked
+    /// and searched inside; when false, they're read as opaque binary
+    /// data like any other file. Mirrors ripgrep's `-z`/`--search-zip`.
     pub search_archives: bool,
 }
 
-/// Somewhere a directory's entries can be handed off for someone else to
-/// pick up later - the thing that makes a directory walk parallel. `search`
-/// only needs to be able to hand work off; it doesn't need to know how
-/// that work gets distributed or picked up.
+/// Somewhere a directory's entries can be handed off for someone else
+/// to pick up later - what makes a directory walk parallel.
 pub trait WorkQueue {
-    /// Hands off a batch of newly discovered paths at once (rather than
-    /// one at a time), so an implementation that needs to wake up other
-    /// workers can do that once per directory instead of once per entry.
+    /// Hands off a batch of newly discovered paths at once, so an
+    /// implementation that wakes other workers can do that once per
+    /// directory instead of once per entry.
     fn enqueue(&self, paths: impl Iterator<Item = PathBuf>);
 }
 
-/// Searches one path against `patterns`.
-/// A file is read line by line and matched directly. A directory isn't
-/// recursed into here - its entries are handed to `WorkQueue` for someone to pick up.
+/// Searches one path against `patterns`. A file is read line by line
+/// and matched directly. A directory isn't recursed into here - its
+/// entries are handed to `WorkQueue`.
 pub fn search(
     patterns: &[Regex],
     path: &Path,
@@ -110,12 +96,11 @@ pub fn search(
     printer: &mut FlushingPrinter<'_>,
     queue: &impl WorkQueue,
 ) -> SearchResult {
-    // symlink_metadata (unlike metadata) reports the entry's own type instead
-    // of following the symlink, so this check actually catches symlinks
+    // symlink_metadata, unlike metadata, doesn't follow the symlink.
     let metadata = fs::symlink_metadata(path)?;
 
     if metadata.is_symlink() {
-        // skip for now - this could lead to infinite cycles
+        // Skipped for now - following one could loop forever.
         return Ok(Outcome::Done);
     }
 
@@ -130,7 +115,6 @@ pub fn search(
     }
 
     if !metadata.is_file() {
-        // Something we don't know how to work with
         return Ok(Outcome::Done);
     }
 
@@ -147,11 +131,10 @@ pub fn search(
 }
 
 /// Reads one logical file's worth of lines (a whole plain file, or one
-/// member of an archive) and matches them against `patterns`. On a clean
-/// finish, flushes whatever `printer` buffered for it straight to its
-/// emit callback - so a caller looping over many members (an archive)
-/// gets each one's output as it finishes rather than having to wait for
-/// all of them.
+/// archive member) and matches them against `patterns`. Flushes
+/// `printer`'s buffer to its emit callback as soon as it's done, so a
+/// caller looping over an archive's members gets each one's output as
+/// it finishes.
 fn search_reader(
     patterns: &[Regex],
     file_path: &str,
@@ -160,8 +143,7 @@ fn search_reader(
     flushing_printer: &mut FlushingPrinter<'_>,
 ) -> Result<Outcome, Error> {
     let mut line_number: u64 = 1;
-    // Reused across every line of this file/member instead of allocated
-    // fresh per line - `match_line` clears and refills it each call.
+    // Reused across every line instead of allocated fresh each time.
     let mut line_matches = Vec::new();
 
     let mut on_read_line = |line: &[u8]| {
@@ -221,13 +203,11 @@ mod tests {
 
     struct RecordingPrinter {
         matches: Vec<RecordedMatch>,
-        // every line passed to `print`, regardless of how many (if any)
-        // matches it carried - needed to observe invert-match behavior,
-        // where `print` is called with zero matches
+        // Every line passed to `print`, even with zero matches (for
+        // invert-match).
         printed_lines: Vec<String>,
-        // how many times `print` itself was called, as opposed to how many
-        // matches were reported - a line with several matches must still
-        // be reported through a single `print` call
+        // How many times `print` was called, vs. how many matches
+        // were reported - several matches on one line is one call.
         print_call_count: u32,
         eof_count: u32,
     }

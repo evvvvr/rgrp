@@ -77,10 +77,10 @@ tools are given matching flags on each row.
 
 | setting | tool | time | peak RSS | lines matched |
 |---|---|---|---|---|
-| default (skip binary) | `rgrp` | 2.31s | 87.9MB | 365,844 |
-| default (skip binary) | `rg` | 1.74s | 75.8MB | 365,844 |
-| `-a` (binary as text) | `rgrp` | 1.97s | 85.0MB | 368,669 |
-| `-a` (binary as text) | `rg` | 1.69s | 72.8MB | 368,669 |
+| default (skip binary) | `rgrp` | 2.32s | 90.3MB | 365,844 |
+| default (skip binary) | `rg` | 1.78s | 73.1MB | 365,844 |
+| `-a` (binary as text) | `rgrp` | 1.94s | 85.7MB | 368,669 |
+| `-a` (binary as text) | `rg` | 1.80s | 72.9MB | 368,669 |
 
 With matching flags, `rgrp` and `rg` agree exactly on every line matched in
 both configurations. `rg` is consistently faster here by ~15-20%; with ~58k
@@ -96,12 +96,17 @@ of reading them as opaque binary data:
 
 | setting | tool | time | peak RSS | lines matched |
 |---|---|---|---|---|
-| default (no `-z`) | `rgrp` | 0.00s | 2.8MB | 0 |
-| default (no `-z`) | `rg` | 0.13s | 3.8MB | 0 |
-| `-z` | `rgrp` | 3.17s | 60.0MB | **365,844** |
-| `-z` | `rg` | 0.00s | 4.0MB | 1 † |
-| `-a -z` | `rgrp` | 3.11s | 55.7MB | 368,566 ‡ |
-| `-a -z` | `rg` | 3.43s | 21.8MB | 369,164 § |
+| default (no `-z`) | `rgrp` | 0.00s | 2.1MB | 0 |
+| default (no `-z`) | `rg` | 0.14s | 1.9MB | 0 |
+| `-z` | `rgrp` | 3.14s | 71.1MB ¶ | **365,844** |
+| `-z` | `rg` | 0.03s | 1.9MB | 1 † |
+| `-a -z` | `rgrp` | 3.11s | 74.0MB ¶ | 368,566 ‡ |
+| `-a -z` | `rg` | 3.69s | 19.6MB | 369,164 § |
+
+¶ Median of several runs, not a single sample - peak RSS for `rgrp -z`
+swings by ~15-20MB run to run on this machine even with nothing in the code
+changed between runs, so a single-sample reading can look like a
+regression (or an improvement) that isn't really there.
 
 † `rg -z` only decompresses a single gzip stream - it has no concept of a
 tar member. The decompressed tar bytes (headers and padding) look binary to
@@ -124,11 +129,16 @@ For this archive's 64,513 entries, that was on the order of hours,
 estimated from timing a single late-archive extraction rather than run to
 completion. It's a single streaming pass now (`tar -xOf` once, member
 boundaries read from `tar -tvf`'s size column), which is linear - the whole
-`-z` run above, archive included, takes 3.17s.
+`-z` run above, archive included, takes 3.14s. Zip archives are handled
+the same way (`unzip -p` once, member boundaries read from `unzip -v`'s
+size column), replacing an earlier version that found member boundaries by
+matching `unzip`'s own progress-line text against the extracted content
+stream - which a member whose content happened to contain a matching line
+could throw off.
 
 Peak memory for `-z`/`-a -z` dropped from an initial working version's
 476MB/629MB (which buffered a whole archive's worth of output before
-printing any of it) to the 60MB/56MB above, via two changes: flushing a
+printing any of it) to the 71.1MB/74.0MB above, via two changes: flushing a
 printer's output per archive *member* instead of per whole archive, and
 bounding how much of a single member is ever read into memory at once
 (regardless of how large that member itself is) rather than buffering it

@@ -10,42 +10,35 @@ use std::thread::{self, JoinHandle};
 use crate::printer::{FlushingPrinter, Printer};
 use crate::search::{Error as SearchError, Options as SearchOptions, WorkQueue, search};
 
-/// The state every worker thread shares while walking a search: the queue
-/// of paths still to process, and the bookkeeping that lets workers agree
-/// on when there's truly nothing left to do.
+/// State every worker thread shares: the queue of paths still to
+/// process, and the bookkeeping that lets workers agree when there's
+/// nothing left to do.
 pub struct SharedWorkState {
-    /// Paths waiting to be searched. A directory expands into its entries
-    /// here rather than being recursed into directly, which is what lets
-    /// different workers pick up different parts of the same walk.
+    /// Paths waiting to be searched. A directory expands into its
+    /// entries here instead of being recursed into directly, so
+    /// different workers can pick up different parts of the walk.
     pub work_queue: SegQueue<PathBuf>,
-    /// How many paths are currently being processed (popped, but not yet
-    /// finished). Needed so a worker that finds the queue empty can tell
-    /// "we're done" apart from "someone's mid-directory and about to push
-    /// more work".
+    /// Paths popped but not yet finished - lets a worker that finds
+    /// the queue empty tell "we're done" from "someone's mid-directory
+    /// and about to push more work".
     pub pending_work_counter: AtomicUsize,
-    /// Wakes workers that are waiting for new work or for everyone to finish.
+    /// Wakes workers waiting for new work or for everyone to finish.
     pub condition: Condvar,
     /// Paired with `condition`; holds no real data of its own.
     pub condition_guard: Mutex<()>,
-    /// Set once (by a Ctrl-C handler) to ask every worker to stop picking
-    /// up new work - whatever each worker is already in the middle of
-    /// still runs to completion (so its output is still reported and its
-    /// spawned external processes still get reaped), but none of them
-    /// pop another path off the queue afterward.
+    /// Set once (by a Ctrl-C handler) to stop every worker from
+    /// picking up new work - whatever's already in progress still
+    /// runs to completion.
     pub cancelled: AtomicBool,
     /// Held by whichever worker is currently sending a path's output,
-    /// from its first chunk to its last - so a large file/archive that
-    /// streams its output in several pieces (rather than one, to keep
-    /// memory bounded) can't have another worker's path interleaved
-    /// between those pieces. Acquired lazily, only on the first chunk a
-    /// path actually has to send, so a path with no matches never waits
-    /// on it at all.
+    /// so a large file/archive streaming output in several chunks
+    /// can't have another worker's path interleaved in between.
+    /// Acquired lazily, on the first chunk a path has to send.
     pub print_lock: Mutex<()>,
 }
 
 impl SharedWorkState {
-    /// Seeds the work queue with the initial paths (the ones given on the
-    /// command line) and sets up empty/zeroed bookkeeping around it.
+    /// Seeds the work queue with the given paths.
     pub fn new(work_items: &[PathBuf]) -> Self {
         let work_queue = SegQueue::new();
 
@@ -69,17 +62,15 @@ impl WorkQueue for SharedWorkState {
         for path in paths {
             self.work_queue.push(path);
         }
-        // wake any workers that are waiting on the queue being empty - the
-        // in-flight count for the directory that just expanded is what
-        // keeps them from exiting before they can see these new entries
+        // Wake workers waiting on the queue being empty.
         self.condition.notify_all();
     }
 }
 
-/// Signals that at least one path reported an error during `consume_with`.
-/// The error itself was already reported to the caller's `on_error`
-/// callback as it happened; this only carries the aggregate pass/fail
-/// outcome through `Result`'s `?`/`#[must_use]` machinery.
+/// Signals that at least one path reported an error during
+/// `consume_with`. The error itself was already reported to the
+/// caller's `on_error` callback; this just carries pass/fail through
+/// `Result`.
 pub struct SearchFailed;
 
 /// How a search ended, once every worker has stopped.
@@ -87,16 +78,14 @@ pub struct SearchFailed;
 pub enum RunOutcome {
     /// Every path was searched.
     Completed,
-    /// Ctrl-C (or another `ctrlc`-handled termination signal) asked the
-    /// workers to stop - whatever each was already searching finished
-    /// normally, but anything still queued was left unsearched.
+    /// Ctrl-C asked the workers to stop; anything still queued was
+    /// left unsearched.
     Cancelled,
 }
 
-/// What `spawn_workers` hands back: a way to collect the results of the
-/// search it just started. The workers are already running by the time you
-/// have one of these - call [`WorkersHandle::consume_with`] to actually see
-/// their output and find out whether anything failed.
+/// What `spawn_workers` hands back - the workers are already running;
+/// call [`WorkersHandle::consume_with`] to see their output and find
+/// out whether anything failed.
 pub struct WorkersHandle {
     threads: Vec<JoinHandle<()>>,
     output_rx: Receiver<Result<String, (SearchError, PathBuf)>>,
@@ -105,11 +94,8 @@ pub struct WorkersHandle {
 
 impl WorkersHandle {
     /// Drains results until every worker has finished, then joins them.
-    ///
-    /// Call this exactly once - it takes `self` by value because there's
-    /// nothing left to do with the handle afterward. `on_output` is called
-    /// with each file's buffered output as it arrives; `on_error` is called
-    /// once per path that failed, with the path it failed on.
+    /// Call this exactly once. `on_output` is called with each file's
+    /// buffered output as it arrives; `on_error` once per failed path.
     pub fn consume_with(
         self,
         mut on_output: impl FnMut(String),
@@ -143,8 +129,8 @@ impl WorkersHandle {
     }
 }
 
-/// Everything [`spawn_workers`] needs that isn't a closure. Grouped into
-/// one struct mainly to keep `spawn_workers`'s own parameter list short.
+/// Everything [`spawn_workers`] needs that isn't a closure, grouped to
+/// keep its parameter list short.
 pub struct SpawnOptions<'a> {
     /// The compiled patterns to search for.
     pub patterns: &'a [Regex],
@@ -156,14 +142,11 @@ pub struct SpawnOptions<'a> {
     pub max_threads: usize,
 }
 
-/// Starts the worker thread pool and returns immediately with a handle to
-/// its results - the workers are already running concurrently by the time
-/// this function returns.
+/// Starts the worker thread pool and returns a handle to its results;
+/// the workers are already running by the time this returns.
 ///
-/// `make_printer` is called once per path a worker picks up (file or
-/// directory alike), since deciding which it is happens inside `search`
-/// itself; it's shared across every thread behind an `Arc`, so it needs to
-/// be `Send + Sync`.
+/// `make_printer` is called once per path a worker picks up, shared
+/// across threads behind an `Arc`, so it needs to be `Send + Sync`.
 pub fn spawn_workers(
     opts: SpawnOptions,
     make_printer: impl Fn() -> Box<dyn Printer> + Send + Sync + 'static,
@@ -171,28 +154,30 @@ pub fn spawn_workers(
     let shared_state = Arc::new(SharedWorkState::new(opts.files));
     let make_printer = Arc::new(make_printer);
 
-    // Only the first registration in a process actually takes effect (the
-    // `ctrlc` crate errors on a second one) - harmless to ignore here,
-    // since the only realistic case of this firing more than once is
-    // several tests calling `run()` in the same `cargo test` binary,
-    // where Ctrl-C during the test run isn't a scenario worth handling.
+    // Only the first registration per process takes effect - harmless
+    // to ignore a second one, which only happens when several tests
+    // call `run()` in the same binary.
     let cancel_state = Arc::clone(&shared_state);
     let _ = ctrlc::set_handler(move || {
-        // `swap` reports whether cancellation had already been
-        // requested - a second Ctrl-C while workers are still finishing
-        // their in-flight paths means "stop now", not "finish what
-        // you're doing first", so this skips the graceful path entirely
-        // on the second (and every further) press.
-        if cancel_state.cancelled.swap(true, Ordering::AcqRel) {
+        // Held across the swap and the notify: a worker's `wait_while`
+        // only re-checks its predicate while holding this same mutex,
+        // so taking it here stops a notify from firing in the gap
+        // between the worker reading `cancelled` and parking on the
+        // condvar, where it would otherwise be silently dropped.
+        let guard = cancel_state
+            .condition_guard
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // A second Ctrl-C while workers are still finishing means
+        // "stop now" - skip the graceful path entirely.
+        let already_cancelled = cancel_state.cancelled.swap(true, Ordering::AcqRel);
+        cancel_state.condition.notify_all();
+        drop(guard);
+
+        if already_cancelled {
             eprintln!("rgrp: second interrupt, exiting immediately");
             std::process::exit(130);
         }
-        // Wake every worker currently parked in `wait_while` - without
-        // this, one with nothing left in the queue but another still
-        // "in flight" would otherwise keep waiting for a notify that
-        // only ever comes from work finishing or arriving, neither of
-        // which cancellation alone produces.
-        cancel_state.condition.notify_all();
     });
 
     let mut threads: Vec<JoinHandle<()>> = Vec::new();
@@ -225,16 +210,13 @@ pub fn spawn_workers(
                     .unwrap();
 
                 if shared_state.cancelled.load(Ordering::Acquire) {
-                    // Whatever's left queued stays unsearched - only
-                    // work already popped by some other, still-running
-                    // worker finishes normally.
                     drop(guard);
                     break;
                 }
 
                 let Some(path) = shared_state.work_queue.pop() else {
-                    // Lost the race for the last item to another worker; if no
-                    // one is still in flight either, there's nothing left.
+                    // Lost the race for the last item; nothing left if
+                    // no one else is still in flight either.
                     if shared_state.pending_work_counter.load(Ordering::Acquire) == 0 {
                         break;
                     }
@@ -246,39 +228,26 @@ pub fn spawn_workers(
                     .fetch_add(1, Ordering::AcqRel);
                 drop(guard);
 
-                // Caught rather than left to unwind: a panic anywhere in
-                // here (e.g. an external tool failing to start) would
-                // otherwise skip the pending_work_counter decrement
-                // below, permanently wedging every other worker's
-                // `wait_while` - the queue would look done (empty) but
-                // never actually report as such, hanging the whole
-                // program even after all other real work finished.
+                // Caught rather than left to unwind: an uncaught panic
+                // here would skip the pending_work_counter decrement
+                // below, wedging every other worker's `wait_while`
+                // forever even after all other work finished.
                 let search_result = panic::catch_unwind(AssertUnwindSafe(|| {
                     let mut printer = make_printer();
-                    // Acquired on this path's first chunk, if it has
-                    // one, and held through every later chunk for the
-                    // same path - so nothing else can interleave its
-                    // own output in between. Released automatically
-                    // once this closure (and therefore this path's
-                    // search) is done, letting the next path that needs
-                    // it take over. A path that never calls `emit` at
-                    // all (no matches) never touches the lock.
+                    // Acquired on this path's first chunk and held
+                    // through its later ones, so no other path's
+                    // output can interleave. Released once this
+                    // closure finishes. Never touched by a path with
+                    // no matches.
                     let mut print_guard: Option<std::sync::MutexGuard<'_, ()>> = None;
                     let mut emit = |output: String| {
                         if print_guard.is_none() {
-                            // `unwrap_or_else(PoisonError::into_inner)`
-                            // rather than `.unwrap()`: this Mutex only
-                            // ever guards `()`, never real data that a
-                            // panic mid-hold could leave inconsistent,
-                            // so recovering from poisoning is always
-                            // safe. Without this, one worker panicking
-                            // while holding the lock would poison it
-                            // for good, and every other worker's next
-                            // `.lock()` on it would panic too - turning
-                            // one isolated panic into a cascade of
-                            // spurious WorkerPanicked failures for the
-                            // rest of the run, defeating the isolation
-                            // catch_unwind exists for.
+                            // Recovers from poisoning rather than
+                            // `.unwrap()`-ing: this mutex only ever
+                            // guards `()`, so one worker panicking
+                            // while holding it should never cascade
+                            // into every other worker's lock attempt
+                            // panicking too.
                             print_guard = Some(
                                 shared_state
                                     .print_lock
@@ -293,10 +262,9 @@ pub fn spawn_workers(
                     search(&patterns, &path, &search_options, &mut flushing_printer, &*shared_state)
                 }));
 
-                // On success, every bit of output - whether this path was
-                // a single plain file or an archive with many members -
-                // was already sent to `emit` as each one finished, so
-                // there's nothing left to do here but report an error.
+                // On success, output was already sent to `emit` as
+                // each member finished, so only an error is left to
+                // report here.
                 match search_result {
                     Ok(Ok(_outcome)) => {}
                     Ok(Err(err)) => {
@@ -318,8 +286,8 @@ pub fn spawn_workers(
         threads.push(thread);
     }
 
-    // drop the originals so the channels close once every worker's cloned
-    // sender has also been dropped, letting the caller's receive loop end
+    // Drop the original sender so the channel closes once every
+    // worker's clone is also dropped.
     drop(output_tx);
 
     WorkersHandle {
@@ -329,11 +297,9 @@ pub fn spawn_workers(
     }
 }
 
-/// Pulls a human-readable message out of a caught panic's payload - most
-/// panics (including every `.unwrap()`/`.expect()` in this codebase)
-/// carry either a `&'static str` or a `String`; anything else (a custom
-/// payload from `panic_any`, which nothing here uses) falls back to a
-/// generic message rather than failing to report the panic at all.
+/// Pulls a human-readable message out of a caught panic's payload.
+/// Falls back to a generic message for anything that isn't a
+/// `&'static str` or `String`.
 fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
     if let Some(message) = payload.downcast_ref::<&str>() {
         message.to_string()

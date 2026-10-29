@@ -1,8 +1,7 @@
 use std::path::Path;
 
-/// A compression format applied to a single file - never an archive on its
-/// own (that's `FileType::Tar`/`FileType::Zip`), just something a plain
-/// decompressor can turn back into one file's content.
+/// A compression format applied to a single file, never an archive
+/// (that's `FileType::Tar`/`FileType::Zip`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum CompressionFormat {
     Gzip,
@@ -45,19 +44,11 @@ impl CompressionFormat {
         }
     }
 
-    /// The exit code this decompressor's own docs define as "a warning
-    /// occurred, but the output is still correct" rather than a real
-    /// failure - gzip and xz both document exit code 2 this way (e.g.
-    /// harmless trailing garbage after the compressed stream, confirmed
-    /// directly against a real gzip: "decompression OK, trailing
-    /// garbage ignored", exit 2). `lzma` is the same family as `xz`
-    /// (often literally the same binary under a different name) and
-    /// documented the same way.
-    ///
-    /// Not every decompressor shares this: bzip2's own man page defines
-    /// exit code 2 as "a corrupt compressed file" - a real failure, not
-    /// a warning - so this intentionally isn't a blanket rule for every
-    /// format.
+    /// The exit code this decompressor documents as a harmless warning
+    /// rather than a real failure - gzip and xz (and lzma, the same
+    /// family) use 2 for trailing garbage after the stream. Not every
+    /// decompressor shares this: bzip2's exit code 2 means a corrupt
+    /// file, a real failure.
     pub(super) fn tolerable_warning_exit_code(self) -> Option<i32> {
         match self {
             Self::Gzip | Self::Xz | Self::Lzma => Some(2),
@@ -66,15 +57,13 @@ impl CompressionFormat {
     }
 }
 
-/// What kind of file a path looks like, decided from its extension alone.
-/// This is the one place that knows about every extension `search`
-/// recognizes, so each reader downstream just handles its own kind instead
-/// of also having to decide whether it applies.
+/// What kind of file a path looks like, decided from its extension
+/// alone. The one place that knows about every extension `search`
+/// recognizes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum FileType {
-    /// A tar archive, compressed or not - `tar` itself auto-detects
-    /// whichever compression (if any) is actually in use, so this carries
-    /// no further detail.
+    /// A tar archive, compressed or not - `tar` auto-detects the
+    /// compression itself.
     Tar,
     Zip,
     /// A single file compressed on its own, not an archive.
@@ -88,9 +77,8 @@ pub(super) fn classify(path: &Path) -> FileType {
         return FileType::Plain;
     };
 
-    // Short forms that fold "tar" and the compression into one extension
-    // (tgz == tar.gz, tbz2 == tar.bz2, etc.) - `tar` auto-detects the
-    // compression either way, so these don't need a `CompressionFormat`.
+    // Short forms folding "tar" and the compression into one
+    // extension (tgz == tar.gz, tbz2 == tar.bz2, etc.).
     const SHORT_TAR_FORMS: &[&str] = &["tgz", "taz", "tbz", "tbz2", "tz2", "tlz", "txz", "tzst"];
 
     if extension == "tar" || SHORT_TAR_FORMS.contains(&extension) {
@@ -102,9 +90,7 @@ pub(super) fn classify(path: &Path) -> FileType {
     }
 
     if let Some(format) = CompressionFormat::from_extension(extension) {
-        // A compressed tarball (foo.tar.gz) is still a tar archive - `tar`
-        // needs to unpack its members, not a plain decompressor that would
-        // just hand back the tarball's raw bytes.
+        // A compressed tarball (foo.tar.gz) is still a tar archive.
         let is_tarball = path
             .file_stem()
             .and_then(|s| s.to_str())

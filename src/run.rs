@@ -43,32 +43,30 @@ pub struct Options {
     pub invert_matches: bool,
     /// How many worker threads to use; `0` picks a number automatically.
     pub max_threads: u8,
-    /// When true, a file that looks binary is searched as text instead of
-    /// being skipped. Mirrors ripgrep's `-a`/`--text`.
+    /// When true, a file that looks binary is searched as text instead
+    /// of skipped. Mirrors ripgrep's `-a`/`--text`.
     pub search_binary: bool,
-    /// When true, a trailing `\r` before the `\n` is treated as part of the
-    /// line terminator and stripped, rather than as part of the line
-    /// content. Mirrors ripgrep's `--crlf`.
+    /// When true, a trailing `\r` before `\n` is stripped as part of
+    /// the line terminator. Mirrors ripgrep's `--crlf`.
     pub crlf: bool,
-    /// When true, zip/tar archives and gzip/bzip2/xz/etc-compressed files
-    /// are unpacked and searched inside, instead of being read as opaque
-    /// binary data like any other file. Mirrors ripgrep's `-z`/`--search-zip`.
+    /// When true, zip/tar archives and compressed files are unpacked
+    /// and searched inside, instead of being read as opaque binary
+    /// data. Mirrors ripgrep's `-z`/`--search-zip`.
     pub search_archives: bool,
 }
 
 /// Runs a whole search end to end: compiles the patterns, starts the
-/// worker pool, and blocks until every result and error has been reported.
+/// worker pool, and blocks until every result and error has been
+/// reported.
 ///
-/// `make_printer` is shared across every worker thread and called once per
-/// path a worker picks up, so it needs to be `Send + Sync`. `on_error` only
-/// ever runs on the calling thread, once per path that failed, with that
-/// path.
+/// `make_printer` is shared across every worker thread, so it needs to
+/// be `Send + Sync`. `on_error` only runs on the calling thread, once
+/// per failed path.
 pub fn run<P: Printer + 'static>(
     options: &Options,
     make_printer: impl Fn() -> P + Send + Sync + 'static,
     on_error: impl FnMut(search::Error, &Path),
 ) -> Result<(), Error> {
-    // Compile search patterns and fail fast if one of them is invalid
     let patterns = options
         .regexps
         .iter()

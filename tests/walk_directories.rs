@@ -10,9 +10,8 @@ use rgrp::printer::FlushingPrinter;
 use rgrp::search::{self, search};
 use tempfile::tempdir;
 
-// `search` only expands one level of a directory into the shared queue and
-// returns; draining the queue (single-threaded, so there's no race to
-// worry about) is what actually walks the whole tree.
+// `search` only expands one level of a directory and returns; draining
+// the queue single-threaded is what walks the whole tree.
 fn walk(
     patterns: &[Regex],
     root: &Path,

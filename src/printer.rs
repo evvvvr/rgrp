@@ -2,21 +2,16 @@ use std::fmt::Write;
 
 use owo_colors::OwoColorize;
 
-/// Turns one matched line into whatever a printer's output format looks
-/// like - purely a rendering concern. Buffering, flushing and deciding
-/// when output actually gets sent anywhere live in `FlushingPrinter`
-/// instead, built on top of this rather than part of it.
+/// Turns one matched line into a printer's output format - purely
+/// rendering. Buffering and flushing live in `FlushingPrinter` instead.
 ///
-/// One printer instance is created per file, so implementations can hold
-/// per-file state (e.g. "have I already printed this file's name?") -
-/// `reset` is called once that file (or archive member) is done, so the
-/// next one starts fresh.
+/// One instance is created per file, so implementations can hold
+/// per-file state (e.g. "have I already printed this file's name?");
+/// `reset` is called once that file (or archive member) is done.
 pub trait Printer: Send + Sync {
-    /// Renders a single line that had at least one match, as the text
-    /// that should be appended to this file's output. `matches` holds
-    /// every match on the line, sorted by start offset, so implementations
-    /// can render the whole line in one shot instead of being called once
-    /// per match.
+    /// Renders a line with at least one match, as text to append to
+    /// this file's output. `matches` holds every match on the line,
+    /// sorted by start offset.
     fn render_line(
         &mut self,
         file_path: &str,
@@ -25,35 +20,31 @@ pub trait Printer: Send + Sync {
         matches: &[(usize, usize)],
     ) -> String;
 
-    /// Clears any per-file state (e.g. "have I already printed this
-    /// file's name?"), since whatever comes next - another file, or
-    /// more output for this same file after a discarded binary member -
-    /// starts fresh.
+    /// Clears any per-file state, since whatever comes next starts
+    /// fresh.
+    /// E.g. tarball archive uses one printer and resets per archive entry.
     fn reset(&mut self);
 }
 
-/// How large a buffered-but-not-yet-emitted chunk is allowed to grow
-/// before `FlushingPrinter` sends it on early, mid-file - otherwise a
-/// single file (or archive member) with a huge number of matches would
-/// hold all of them in memory until it finally ends, regardless of how
-/// the rest of a search is already bounded.
+/// How large a buffered chunk can grow before `FlushingPrinter` sends
+/// it early, mid-file - otherwise a file with many matches would hold
+/// them all in memory until it ends.
 const FLUSH_THRESHOLD_BYTES: usize = 1 << 20; // 1 MiB
 
-/// Wraps a `Printer` with the policy of when its rendered lines actually
-/// get sent to `emit`.
+/// Wraps a `Printer` with the policy of when its rendered lines get
+/// sent to `emit`.
 ///
-/// One instance covers one *path* (which may itself contain many
-/// files/members, e.g. an archive) - `finish` marks the end of each
-/// individual file/member within it, not the end of the whole thing.
+/// One instance covers one *path*, which may itself contain many
+/// files/members (e.g. an archive) - `finish` marks the end of each
+/// one, not the end of the whole path.
 pub struct FlushingPrinter<'a> {
     printer: &'a mut dyn Printer,
     emit: &'a mut dyn FnMut(String),
     buffer: String,
-    // Once a size-triggered flush has actually sent something for the
-    // *current* file/member, there's no taking it back - a later binary
-    // detection can no longer discard everything for it, only what's
-    // accumulated since. Reset by `finish`/`discard`, which both mark a
-    // file/member boundary.
+    // Once a size-triggered flush has sent something for the current
+    // file/member, it can't be taken back - a later binary detection
+    // can only discard what's accumulated since. Reset by
+    // `finish`/`discard`.
     already_emitted: bool,
 }
 
@@ -83,12 +74,9 @@ impl<'a> FlushingPrinter<'a> {
     }
 
     /// Marks the end of one file/member. If it turned out binary and
-    /// nothing had already been sent for it, discards whatever's
-    /// buffered, since it's incomplete and shouldn't be shown; otherwise
-    /// flushes and emits whatever's left - once some of a file's output
-    /// has already gone out, there's no retracting it, so this finishes
-    /// with the rest instead of discarding on top of what can't be
-    /// undone anyway.
+    /// nothing had already been sent for it, discards what's buffered;
+    /// otherwise flushes and emits the rest, since output already sent
+    /// can't be retracted anyway.
     pub fn finish(&mut self, is_binary: bool) {
         if is_binary && !self.already_emitted {
             self.buffer.clear();
@@ -103,10 +91,9 @@ impl<'a> FlushingPrinter<'a> {
         self.printer.reset();
     }
 
-    /// Unconditionally discards whatever's buffered for the current
-    /// file/member, regardless of whether anything was already emitted -
-    /// for a genuine read error, where there's no "finish with what's
-    /// left" to fall back to, only "stop".
+    /// Unconditionally discards whatever's buffered, for a genuine
+    /// read error where there's no "finish with the rest" to fall
+    /// back to.
     pub fn discard(&mut self) {
         self.buffer.clear();
         self.already_emitted = false;
@@ -156,29 +143,20 @@ impl Printer for ColorPrinter {
         let mut printed_byte_index = 0;
 
         for m in matches {
-            // Widen the match to whichever whole characters it touches,
-            // rather than decoding each half of a split multi-byte
-            // character on its own - two independent `from_utf8_lossy`
-            // calls on either side of such a split would each see an
-            // incomplete sequence and print a replacement character for
-            // it, turning one character into two mangled ones.
+            // Widen the match to whole characters, so a split
+            // multi-byte character doesn't decode as two mangled ones.
             let (start, end) = *m;
             let start = snap_start_to_char_boundary(line, start.max(printed_byte_index));
             let end = snap_end_to_char_boundary(line, end);
 
             if start >= end {
-                // Fully covered by a previous match already printed -
-                // patterns can overlap, and printing this one too would
-                // duplicate that stretch of the line.
+                // Fully covered by a previous, overlapping match.
                 continue;
             }
 
             if start > printed_byte_index {
                 highlighted.push_str(&String::from_utf8_lossy(&line[printed_byte_index..start]));
             }
-            // `write!` renders the colored wrapper's `Display` impl
-            // straight into `highlighted`, rather than first rendering
-            // it into its own throwaway `String` via `.to_string()`.
             let _ = write!(
                 highlighted,
                 "{}",
@@ -200,15 +178,13 @@ impl Printer for ColorPrinter {
     }
 }
 
-/// A continuation byte of a multi-byte UTF-8 sequence (`10xxxxxx`) - never
-/// the first byte of a character.
+/// A continuation byte of a multi-byte UTF-8 sequence (`10xxxxxx`).
 fn is_continuation_byte(b: u8) -> bool {
     b & 0xC0 == 0x80
 }
 
-/// Walks a match-start offset back to the start of whatever UTF-8 sequence
-/// it's inside of (if any), so a boundary landing mid-character widens
-/// outward to the whole character instead of splitting it.
+/// Walks a match-start offset back to the start of its UTF-8 sequence,
+/// if it lands mid-character.
 fn snap_start_to_char_boundary(line: &[u8], mut idx: usize) -> usize {
     while idx > 0 && idx < line.len() && is_continuation_byte(line[idx]) {
         idx -= 1;
@@ -216,10 +192,7 @@ fn snap_start_to_char_boundary(line: &[u8], mut idx: usize) -> usize {
     idx
 }
 
-/// The end-offset counterpart of [`snap_start_to_char_boundary`] - widens
-/// forward, past the sequence's last continuation byte, since an end
-/// offset that lands mid-character means the match stops partway through
-/// it rather than before it.
+/// The end-offset counterpart of [`snap_start_to_char_boundary`].
 fn snap_end_to_char_boundary(line: &[u8], mut idx: usize) -> usize {
     while idx < line.len() && is_continuation_byte(line[idx]) {
         idx += 1;
@@ -304,9 +277,8 @@ mod tests {
     #[test]
     fn match_that_splits_a_multibyte_char_does_not_show_two_replacement_chars() {
         let mut printer = ColorPrinter::new();
-        // "aéb" as UTF-8: 'a' (0x61), é (0xC3 0xA9), 'b' (0x62). The pattern
-        // below (Unicode mode off) matches the lone continuation byte of é,
-        // landing the match squarely inside that character.
+        // "aéb" as UTF-8; the pattern (Unicode mode off) matches é's
+        // lone continuation byte, landing inside that character.
         let line = [0x61, 0xC3, 0xA9, 0x62];
         let pattern = RegexBuilder::new(r"\xA9").unicode(false).build().unwrap();
         let matches: Vec<(usize, usize)> = pattern
@@ -324,9 +296,8 @@ mod tests {
     #[test]
     fn match_ending_mid_character_widens_forward_instead_of_being_dropped() {
         let mut printer = ColorPrinter::new();
-        // "a€" as UTF-8: 'a' (0x61), € (0xE2 0x82 0xAC). The pattern matches
-        // only the lead byte of €, so the match's end (2) lands on the
-        // second byte of that 3-byte sequence - squarely mid-character.
+        // "a€" as UTF-8; the pattern matches only €'s lead byte, so
+        // the match ends mid-character.
         let line = [0x61, 0xE2, 0x82, 0xAC];
         let pattern = RegexBuilder::new(r"\xE2").unicode(false).build().unwrap();
         let matches: Vec<(usize, usize)> = pattern
@@ -337,9 +308,6 @@ mod tests {
 
         let output = strip_ansi(&printer.render_line("f", 1, &line, &matches));
 
-        // The whole character must survive, highlighted as one unit,
-        // instead of the match being silently dropped by an end boundary
-        // that snapped backward past the start.
         assert_eq!(output.matches('\u{FFFD}').count(), 0);
         assert!(output.contains("a€"));
     }
@@ -406,8 +374,7 @@ mod tests {
             let huge = vec![b'x'; FLUSH_THRESHOLD_BYTES];
             flushing.print_line("f", 1, &huge, &[]);
             flushing.print_line("f", 2, b"more", &[(0, 4)]);
-            // Binary found only after that early flush already went out -
-            // nothing left to retract, so this should still emit the rest.
+            // Binary found only after the early flush already went out.
             flushing.finish(true);
         });
 

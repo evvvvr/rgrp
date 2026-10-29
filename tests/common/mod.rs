@@ -15,14 +15,11 @@ struct Recorded {
     eof_count: u32,
 }
 
-/// `run` creates a fresh printer per file via a `FnMut() -> Printer` factory
-/// and hands each one to `search`, so a plain `Vec`-backed printer can't
-/// accumulate results across an entire directory walk. `SharedRecorder`
-/// hands out lightweight
-/// `RecordingPrinter`s that all funnel into the same shared sink, mirroring
-/// how `ColorPrinter`/`MonochromePrinter` are used in production. It's
-/// `Arc<Mutex<_>>`-backed (rather than `Rc<RefCell<_>>`) so it can be moved
-/// into the worker threads `run` spawns.
+/// `run` creates a fresh printer per file, so a plain `Vec`-backed
+/// printer can't accumulate results across a directory walk.
+/// `SharedRecorder` hands out `RecordingPrinter`s that all funnel into
+/// one shared sink, `Arc<Mutex<_>>`-backed so it can move into worker
+/// threads.
 #[derive(Clone)]
 pub struct SharedRecorder(Arc<Mutex<Recorded>>);
 
@@ -64,9 +61,6 @@ impl Printer for RecordingPrinter {
             line_no,
             line: String::from_utf8_lossy(line).into_owned(),
         });
-        // RecordingPrinter records structured matches directly into the
-        // shared recorder at render time rather than producing printable
-        // text, so there's nothing to hand back here.
         String::new()
     }
 
