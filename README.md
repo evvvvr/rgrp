@@ -15,6 +15,27 @@ AI is used to find and fix bugs (especially concurrency/mem usage related); gene
 
 Basically roughly matching ripgrep abilities.
 
+## Installation
+
+From [crates.io](https://crates.io/crates/rgrp):
+
+```sh
+cargo install rgrp
+```
+
+Or from source:
+
+```sh
+git clone https://github.com/evvvvr/rgrp.git
+cd rgrp
+cargo install --path .
+```
+
+`-z`/`--search-archives` shells out to external tools (`tar`, `unzip`,
+`gzip`, `bzip2`, `xz`, `zstd`, `lzip`, `lzma`, `lzop`, `uncompress`) rather
+than bundling decoders - only the ones for whichever archive/compression
+format you actually search need to be installed.
+
 ## CLI syntax
 
 **SYNOPSIS**
