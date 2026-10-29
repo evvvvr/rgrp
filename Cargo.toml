@@ -3,6 +3,9 @@ name = "rgrp"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
+description = "A small, parallel grep-like line search tool that can also search inside zip/tar archives and compressed files."
+repository = "https://github.com/evvvvr/rgrp"
+readme = "README.md"
 
 [dependencies]
 clap = { version = "4.6.7", default-features = false, features = ["derive", "std", "help", "usage", "error-context"] }
