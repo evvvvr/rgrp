@@ -4,6 +4,7 @@ use std::fs;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 
+use crate::glob::{self, GlobSpec};
 use crate::matcher::{Options as MatchOptions, match_line};
 use crate::printer::FlushingPrinter;
 
@@ -91,6 +92,7 @@ pub trait WorkQueue {
 /// entries are handed to `WorkQueue`.
 pub fn search(
     patterns: &[Regex],
+    globs: &[GlobSpec],
     path: &Path,
     options: &Options,
     printer: &mut FlushingPrinter<'_>,
@@ -105,10 +107,35 @@ pub fn search(
     }
 
     if metadata.is_dir() {
+        // Each entry is checked against `globs` here, before it's
+        // ever enqueued -so an excluded directory is pruned outright
+        // (its contents are never even listed) rather than
+        // merely filtered out one by
+        // one after being visited. This also means `path` itself is
+        // never checked: the paths given directly on the command line
+        // (the only ones that reach `search` without having passed
+        // through this loop first) are always searched regardless of
         let mut entries = Vec::new();
         for entry in fs::read_dir(path)? {
             let entry = entry?;
-            entries.push(entry.path());
+            let entry_path = entry.path();
+
+            if !globs.is_empty() {
+                // `file_type()` comes from the directory read itself
+                // on most platforms rather than a separate `stat`
+                // call, same cost as `entry.path()` above.
+                let is_dir = entry.file_type().is_ok_and(|t| t.is_dir());
+                let keep = if is_dir {
+                    !glob::is_dir_pruned(&entry_path, globs)
+                } else {
+                    glob::is_file_included(&entry_path, globs)
+                };
+                if !keep {
+                    continue;
+                }
+            }
+
+            entries.push(entry_path);
         }
         queue.enqueue(entries.into_iter());
         return Ok(Outcome::Done);

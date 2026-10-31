@@ -60,7 +60,13 @@ impl<'a> FlushingPrinter<'a> {
 
     /// Renders and buffers one matched line, sending the buffer on early
     /// if that pushes it past the size threshold.
-    pub fn print_line(&mut self, file_path: &str, line_no: u64, line: &[u8], matches: &[(usize, usize)]) {
+    pub fn print_line(
+        &mut self,
+        file_path: &str,
+        line_no: u64,
+        line: &[u8],
+        matches: &[(usize, usize)],
+    ) {
         let rendered = self.printer.render_line(file_path, line_no, line, matches);
         self.buffer.push_str(&rendered);
 

@@ -1,10 +1,11 @@
-use clap::{CommandFactory, Parser};
+use clap::{CommandFactory, FromArgMatches, Parser};
 
 use std::env;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use rgrp::glob;
 use rgrp::printer::{ColorPrinter, MonochromePrinter};
 use rgrp::run::{self, Options, run};
 use rgrp::search;
@@ -51,10 +52,50 @@ struct Cli {
     /// other file, and typically skipped as binary).
     #[arg(short = 'z', long = "search-archives")]
     search_archives: bool,
+
+    /// Only search paths matching this glob (may be given multiple
+    /// times; a leading `!` excludes instead of includes; when both
+    /// --glob and --iglob are given, whichever comes later on the
+    /// command line wins for a given path).
+    #[arg(short = 'g', long = "glob", value_name = "GLOB")]
+    glob: Vec<String>,
+
+    /// Same as --glob, but matched case-insensitively.
+    #[arg(long = "iglob", value_name = "GLOB")]
+    iglob: Vec<String>,
 }
 
 fn parse_options() -> Options {
-    let cli = Cli::parse();
+    let matches = Cli::command().get_matches();
+    let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
+
+    let glob_indexes = matches.indices_of("glob").into_iter().flatten();
+    let iglob_indexes = matches.indices_of("iglob").into_iter().flatten();
+
+    let mut tagged: Vec<(usize, &str, bool)> = glob_indexes
+        .zip(cli.glob.iter())
+        .map(|(i, p)| (i, p.as_str(), false))
+        .chain(
+            iglob_indexes
+                .zip(cli.iglob.iter())
+                .map(|(i, p)| (i, p.as_str(), true)),
+        )
+        .collect();
+    tagged.sort_by_key(|(i, ..)| *i);
+
+    let globs = tagged
+        .into_iter()
+        .map(|(_, pattern, ignore_case)| {
+            glob::compile(pattern, ignore_case).unwrap_or_else(|e| {
+                Cli::command()
+                    .error(
+                        clap::error::ErrorKind::InvalidValue,
+                        format!("invalid --glob/--iglob pattern {pattern:?}: {e}"),
+                    )
+                    .exit()
+            })
+        })
+        .collect();
 
     let (patterns, paths) = if cli.regexp.is_empty() {
         let mut args = cli.args.into_iter();
@@ -80,6 +121,7 @@ fn parse_options() -> Options {
         search_binary: cli.text,
         crlf: cli.crlf,
         search_archives: cli.search_archives,
+        globs,
     }
 }
 

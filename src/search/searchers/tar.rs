@@ -98,7 +98,10 @@ pub(in crate::search) fn search_tarball(
         .stdout(Stdio::piped())
         .spawn()?;
 
-    let mut child_output = cmd.stdout.take().expect("just configured with Stdio::piped()");
+    let mut child_output = cmd
+        .stdout
+        .take()
+        .expect("just configured with Stdio::piped()");
     // Kept rather than discarded for a generic placeholder, so the
     // caller learns what actually went wrong.
     let mut first_error: Option<Error> = None;
@@ -177,18 +180,20 @@ mod tests {
 
     #[test]
     fn bsdtar_parses_a_regular_file_line() {
-        let entry =
-            parse_verbose_tar_line("-rw-r--r--  0 voga   staff  786671 Aug 27  2025 node_modules/.package-lock.json")
-                .unwrap();
+        let entry = parse_verbose_tar_line(
+            "-rw-r--r--  0 voga   staff  786671 Aug 27  2025 node_modules/.package-lock.json",
+        )
+        .unwrap();
         assert_eq!(entry.name, "node_modules/.package-lock.json");
         assert_eq!(entry.size, 786671);
     }
 
     #[test]
     fn bsdtar_parses_a_file_name_with_spaces() {
-        let entry =
-            parse_verbose_tar_line("-rw-r--r--  0 voga   staff     123 Aug 27  2025 some dir/a file.txt")
-                .unwrap();
+        let entry = parse_verbose_tar_line(
+            "-rw-r--r--  0 voga   staff     123 Aug 27  2025 some dir/a file.txt",
+        )
+        .unwrap();
         assert_eq!(entry.name, "some dir/a file.txt");
         assert_eq!(entry.size, 123);
     }

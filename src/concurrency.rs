@@ -7,6 +7,7 @@ use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
 
+use crate::glob::GlobSpec;
 use crate::printer::{FlushingPrinter, Printer};
 use crate::search::{Error as SearchError, Options as SearchOptions, WorkQueue, search};
 
@@ -134,6 +135,9 @@ impl WorkersHandle {
 pub struct SpawnOptions<'a> {
     /// The compiled patterns to search for.
     pub patterns: &'a [Regex],
+    /// Only paths matching at least one of these are searched; every
+    /// path is searched if this is empty.
+    pub globs: &'a [GlobSpec],
     /// The starting paths given on the command line.
     pub files: &'a [PathBuf],
     /// Search behavior that doesn't depend on the pattern or the path.
@@ -194,6 +198,7 @@ pub fn spawn_workers(
         let shared_state = Arc::clone(&shared_state);
         let make_printer = Arc::clone(&make_printer);
         let patterns = opts.patterns.to_vec();
+        let globs = opts.globs.to_vec();
         let search_options = *opts.search_options;
         let output_tx = output_tx.clone();
 
@@ -259,7 +264,14 @@ pub fn spawn_workers(
                     };
                     let mut flushing_printer = FlushingPrinter::new(&mut *printer, &mut emit);
 
-                    search(&patterns, &path, &search_options, &mut flushing_printer, &*shared_state)
+                    search(
+                        &patterns,
+                        &globs,
+                        &path,
+                        &search_options,
+                        &mut flushing_printer,
+                        &*shared_state,
+                    )
                 }));
 
                 // On success, output was already sent to `emit` as

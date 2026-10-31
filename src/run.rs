@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{
     concurrency::{RunOutcome, SearchFailed, SpawnOptions, spawn_workers},
+    glob::GlobSpec,
     printer::Printer,
     search,
 };
@@ -53,6 +54,7 @@ pub struct Options {
     /// and searched inside, instead of being read as opaque binary
     /// data. Mirrors ripgrep's `-z`/`--search-zip`.
     pub search_archives: bool,
+    pub globs: Vec<GlobSpec>,
 }
 
 /// Runs a whole search end to end: compiles the patterns, starts the
@@ -87,6 +89,7 @@ pub fn run<P: Printer + 'static>(
     let outcome = spawn_workers(
         SpawnOptions {
             patterns: &patterns,
+            globs: &options.globs,
             files: &options.files,
             search_options: &search_options,
             max_threads: options.max_threads as usize,

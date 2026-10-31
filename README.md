@@ -9,7 +9,6 @@ AI is used to find and fix bugs (especially concurrency/mem usage related); gene
 
 ## To Do:
 - follow symlinks (avoid infinite loops)
-- ignoring/specifying search paths/file patterns 
 - multiline matches
 - file read optimization with mmap
 

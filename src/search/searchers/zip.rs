@@ -103,7 +103,10 @@ pub(in crate::search) fn search_zip(
         .stdout(Stdio::piped())
         .spawn()?;
 
-    let mut child_output = cmd.stdout.take().expect("just configured with Stdio::piped()");
+    let mut child_output = cmd
+        .stdout
+        .take()
+        .expect("just configured with Stdio::piped()");
     let mut first_error: Option<Error> = None;
     let archive_path = path.to_string_lossy();
 
@@ -168,9 +171,10 @@ mod tests {
 
     #[test]
     fn parses_a_stored_regular_file_line() {
-        let entry =
-            parse_verbose_zip_line("      18  Stored       18   0% 10-29-2026 09:32 b8c5e2e7  sub/a.txt")
-                .unwrap();
+        let entry = parse_verbose_zip_line(
+            "      18  Stored       18   0% 10-29-2026 09:32 b8c5e2e7  sub/a.txt",
+        )
+        .unwrap();
         assert_eq!(entry.name, "sub/a.txt");
         assert_eq!(entry.size, 18);
     }
@@ -197,9 +201,10 @@ mod tests {
 
     #[test]
     fn directory_entry_has_zero_length() {
-        let entry =
-            parse_verbose_zip_line("       0  Stored        0   0% 10-29-2026 09:32 00000000  sub/")
-                .unwrap();
+        let entry = parse_verbose_zip_line(
+            "       0  Stored        0   0% 10-29-2026 09:32 00000000  sub/",
+        )
+        .unwrap();
         assert_eq!(entry.name, "sub/");
         assert_eq!(entry.size, 0);
     }
