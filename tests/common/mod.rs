@@ -1,6 +1,11 @@
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use rgrp::printer::Printer;
+use regex::bytes::Regex;
+use rgrp::concurrency::SharedWorkState;
+use rgrp::glob::GlobSpec;
+use rgrp::printer::{FlushingPrinter, Printer};
+use rgrp::search::{self, search};
 
 #[derive(Clone)]
 #[allow(dead_code)] // fields are read by some test binaries but not others
@@ -67,4 +72,31 @@ impl Printer for RecordingPrinter {
     fn reset(&mut self) {
         self.0.lock().unwrap().eof_count += 1;
     }
+}
+
+/// `search` only expands one level of a directory and returns; draining
+/// the queue single-threaded is what walks the whole tree.
+#[allow(dead_code)] // used by some test binaries but not others
+pub fn walk(
+    patterns: &[Regex],
+    globs: &[GlobSpec],
+    root: &Path,
+    options: &search::Options,
+    mut make_printer: impl FnMut() -> RecordingPrinter,
+) -> Result<(), search::Error> {
+    let shared_state = SharedWorkState::new(&[root.to_path_buf()]);
+    while let Some(path) = shared_state.work_queue.pop() {
+        let mut printer = make_printer();
+        let mut emit = |_: String| {};
+        let mut flushing_printer = FlushingPrinter::new(&mut printer, &mut emit);
+        search(
+            patterns,
+            globs,
+            &path,
+            options,
+            &mut flushing_printer,
+            &shared_state,
+        )?;
+    }
+    Ok(())
 }
