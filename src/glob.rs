@@ -5,8 +5,8 @@ use globset::{GlobBuilder, GlobMatcher};
 /// One compiled `--glob`/`--iglob` pattern.
 #[derive(Clone)]
 pub struct GlobSpec {
-    pub matcher: GlobMatcher,
-    pub negate: bool,
+    matcher: GlobMatcher,
+    negate: bool,
 }
 
 /// Compiles one `--glob`/`--iglob` argument into a [`GlobSpec`].
@@ -64,7 +64,7 @@ pub fn is_file_included(path: &Path, globs: &[GlobSpec]) -> bool {
 /// `.rs` file for `src/lib.rs` to still be reachable) - only an
 /// explicit negation (`!target`) can prune it. As with files, the
 /// last glob in command-line order that matches wins.
-pub fn is_dir_pruned(path: &Path, globs: &[GlobSpec]) -> bool {
+pub(crate) fn is_dir_pruned(path: &Path, globs: &[GlobSpec]) -> bool {
     let mut pruned = false;
 
     for glob in globs {

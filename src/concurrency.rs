@@ -22,20 +22,20 @@ pub struct SharedWorkState {
     /// Paths popped but not yet finished - lets a worker that finds
     /// the queue empty tell "we're done" from "someone's mid-directory
     /// and about to push more work".
-    pub pending_work_counter: AtomicUsize,
+    pending_work_counter: AtomicUsize,
     /// Wakes workers waiting for new work or for everyone to finish.
-    pub condition: Condvar,
+    condition: Condvar,
     /// Paired with `condition`; holds no real data of its own.
-    pub condition_guard: Mutex<()>,
+    condition_guard: Mutex<()>,
     /// Set once (by a Ctrl-C handler) to stop every worker from
     /// picking up new work - whatever's already in progress still
     /// runs to completion.
-    pub cancelled: AtomicBool,
+    cancelled: AtomicBool,
     /// Held by whichever worker is currently sending a path's output,
     /// so a large file/archive streaming output in several chunks
     /// can't have another worker's path interleaved in between.
     /// Acquired lazily, on the first chunk a path has to send.
-    pub print_lock: Mutex<()>,
+    print_lock: Mutex<()>,
 }
 
 impl SharedWorkState {
@@ -72,11 +72,11 @@ impl WorkQueue for SharedWorkState {
 /// `consume_with`. The error itself was already reported to the
 /// caller's `on_error` callback; this just carries pass/fail through
 /// `Result`.
-pub struct SearchFailed;
+pub(crate) struct SearchFailed;
 
 /// How a search ended, once every worker has stopped.
 #[derive(Debug, PartialEq)]
-pub enum RunOutcome {
+pub(crate) enum RunOutcome {
     /// Every path was searched.
     Completed,
     /// Ctrl-C asked the workers to stop; anything still queued was
@@ -87,7 +87,7 @@ pub enum RunOutcome {
 /// What `spawn_workers` hands back - the workers are already running;
 /// call [`WorkersHandle::consume_with`] to see their output and find
 /// out whether anything failed.
-pub struct WorkersHandle {
+pub(crate) struct WorkersHandle {
     threads: Vec<JoinHandle<()>>,
     output_rx: Receiver<Result<String, (SearchError, PathBuf)>>,
     shared_state: Arc<SharedWorkState>,
@@ -97,7 +97,7 @@ impl WorkersHandle {
     /// Drains results until every worker has finished, then joins them.
     /// Call this exactly once. `on_output` is called with each file's
     /// buffered output as it arrives; `on_error` once per failed path.
-    pub fn consume_with(
+    pub(crate) fn consume_with(
         self,
         mut on_output: impl FnMut(String),
         mut on_error: impl FnMut(SearchError, &Path),
@@ -132,18 +132,18 @@ impl WorkersHandle {
 
 /// Everything [`spawn_workers`] needs that isn't a closure, grouped to
 /// keep its parameter list short.
-pub struct SpawnOptions<'a> {
+pub(crate) struct SpawnOptions<'a> {
     /// The compiled patterns to search for.
-    pub patterns: &'a [Regex],
+    pub(crate) patterns: &'a [Regex],
     /// Only paths matching at least one of these are searched; every
     /// path is searched if this is empty.
-    pub globs: &'a [GlobSpec],
+    pub(crate) globs: &'a [GlobSpec],
     /// The starting paths given on the command line.
-    pub files: &'a [PathBuf],
+    pub(crate) files: &'a [PathBuf],
     /// Search behavior that doesn't depend on the pattern or the path.
-    pub search_options: &'a SearchOptions,
+    pub(crate) search_options: &'a SearchOptions,
     /// How many worker threads to use; `0` picks a number automatically.
-    pub max_threads: usize,
+    pub(crate) max_threads: usize,
 }
 
 /// Starts the worker thread pool and returns a handle to its results;
@@ -151,7 +151,7 @@ pub struct SpawnOptions<'a> {
 ///
 /// `make_printer` is called once per path a worker picks up, shared
 /// across threads behind an `Arc`, so it needs to be `Send + Sync`.
-pub fn spawn_workers(
+pub(crate) fn spawn_workers(
     opts: SpawnOptions,
     make_printer: impl Fn() -> Box<dyn Printer> + Send + Sync + 'static,
 ) -> WorkersHandle {

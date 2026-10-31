@@ -18,9 +18,9 @@ pub mod run;
 /// directory's entries for later - against a set of patterns.
 pub mod search;
 
-pub mod line_reader;
+mod line_reader;
 
-pub mod matcher;
+mod matcher;
 
 /// Compiles `--glob`/`--iglob` patterns and decides whether a given
 /// path should be searched or a directory walked, based on them.
