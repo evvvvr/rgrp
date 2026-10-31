@@ -1,5 +1,6 @@
 use crossbeam_queue::SegQueue;
 use regex::bytes::Regex;
+use std::collections::HashSet;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -19,6 +20,9 @@ pub struct SharedWorkState {
     /// entries here instead of being recursed into directly, so
     /// different workers can pick up different parts of the walk.
     pub work_queue: SegQueue<PathBuf>,
+    /// The paths given directly on the command line, exempt from
+    /// `--glob`/`--iglob` - set once in `new` and never changed.
+    seed_paths: HashSet<PathBuf>,
     /// Paths popped but not yet finished - lets a worker that finds
     /// the queue empty tell "we're done" from "someone's mid-directory
     /// and about to push more work".
@@ -49,6 +53,7 @@ impl SharedWorkState {
 
         Self {
             work_queue,
+            seed_paths: work_items.iter().cloned().collect(),
             pending_work_counter: AtomicUsize::new(0),
             condition: Condvar::new(),
             condition_guard: Mutex::new(()),
@@ -65,6 +70,10 @@ impl WorkQueue for SharedWorkState {
         }
         // Wake workers waiting on the queue being empty.
         self.condition.notify_all();
+    }
+
+    fn is_seed_path(&self, path: &Path) -> bool {
+        self.seed_paths.contains(path)
     }
 }
 

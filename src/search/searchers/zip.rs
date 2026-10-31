@@ -132,7 +132,7 @@ pub(in crate::search) fn search_zip(
                 printer,
             )
         } else {
-            Ok(Outcome::Done)
+            Ok(Outcome::Ignored)
         };
 
         if let Err(drain_err) = io::copy(&mut member_reader, &mut io::sink()) {

@@ -55,6 +55,11 @@ pub enum Outcome {
     /// discarded; output already sent earlier (past the flush
     /// threshold) can't be retracted, so it's shown anyway.
     BinarySkipped,
+    /// Excluded by `--glob`/`--iglob` - never read at all, whether
+    /// it's a real file, a pruned directory (never even listed), or
+    /// an archive member (still drained off the shared extraction
+    /// stream, just never matched against).
+    Ignored,
 }
 
 type SearchResult = Result<Outcome, Error>;
@@ -85,6 +90,12 @@ pub trait WorkQueue {
     /// implementation that wakes other workers can do that once per
     /// directory instead of once per entry.
     fn enqueue(&self, paths: impl Iterator<Item = PathBuf>);
+
+    /// Whether `path` was one of the paths given directly on the
+    /// command line, rather than discovered by walking a directory -
+    /// `search` exempts these from `--glob`/`--iglob` entirely, same
+    /// as ripgrep's own documented behavior for explicit paths.
+    fn is_seed_path(&self, path: &Path) -> bool;
 }
 
 /// Searches one path against `patterns`. A file is read line by line
@@ -106,36 +117,32 @@ pub fn search(
         return Ok(Outcome::Done);
     }
 
+    // Checked once here, for every path alike, rather than by each
+    // directory pre-filtering its own entries before enqueueing them -
+    // that would leave no way to tell a path given directly on the
+    // command line apart from one `fs::read_dir` discovered, since
+    // both end up popped off the same queue and handed to `search`
+    // the same way. Checking here instead, with that one exemption,
+    // means a path's own glob decision is made exactly once, in
+    // exactly one place, regardless of how it was reached.
+    if !globs.is_empty() && !queue.is_seed_path(path) {
+        let excluded = if metadata.is_dir() {
+            glob::is_dir_pruned(path, globs)
+        } else {
+            !glob::is_file_included(path, globs)
+        };
+        if excluded {
+            return Ok(Outcome::Ignored);
+        }
+    }
+
     if metadata.is_dir() {
-        // Each entry is checked against `globs` here, before it's
-        // ever enqueued -so an excluded directory is pruned outright
-        // (its contents are never even listed) rather than
-        // merely filtered out one by
-        // one after being visited. This also means `path` itself is
-        // never checked: the paths given directly on the command line
-        // (the only ones that reach `search` without having passed
-        // through this loop first) are always searched regardless of
+        // A pruned directory already returned above, before this
+        // ever runs - so excluding one also means its contents are
+        // never even listed, not just filtered out after the fact.
         let mut entries = Vec::new();
         for entry in fs::read_dir(path)? {
-            let entry = entry?;
-            let entry_path = entry.path();
-
-            if !globs.is_empty() {
-                // `file_type()` comes from the directory read itself
-                // on most platforms rather than a separate `stat`
-                // call, same cost as `entry.path()` above.
-                let is_dir = entry.file_type().is_ok_and(|t| t.is_dir());
-                let keep = if is_dir {
-                    !glob::is_dir_pruned(&entry_path, globs)
-                } else {
-                    glob::is_file_included(&entry_path, globs)
-                };
-                if !keep {
-                    continue;
-                }
-            }
-
-            entries.push(entry_path);
+            entries.push(entry?.path());
         }
         queue.enqueue(entries.into_iter());
         return Ok(Outcome::Done);

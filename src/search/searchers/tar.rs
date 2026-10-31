@@ -135,7 +135,7 @@ pub(in crate::search) fn search_tarball(
                 printer,
             )
         } else {
-            Ok(Outcome::Done)
+            Ok(Outcome::Ignored)
         };
 
         // `search_reader` may have stopped early (e.g. a binary
