@@ -4,6 +4,7 @@ use std::process::{Command, Stdio};
 
 use regex::bytes::Regex;
 
+use crate::glob::{self, GlobSpec};
 use crate::printer::FlushingPrinter;
 
 use super::super::{Error, Options, Outcome, SearchResult, search_reader};
@@ -85,6 +86,7 @@ fn list_tarball_entries(path: &Path) -> Result<Vec<ArchiveEntry>, Error> {
 /// instead would re-decompress the archive from the start every time.
 pub(in crate::search) fn search_tarball(
     patterns: &[Regex],
+    globs: &[GlobSpec],
     path: &Path,
     options: &Options,
     printer: &mut FlushingPrinter<'_>,
@@ -118,13 +120,23 @@ pub(in crate::search) fn search_tarball(
         // reads into the next member's content.
         let mut member_reader = (&mut child_output).take(entry.size);
 
-        let res = search_reader(
-            patterns,
-            &archive_prefixed_file_path,
-            options,
-            &mut member_reader,
-            printer,
-        );
+        // Matched against the member's own name, not the archive's
+        // path prefix - `--glob '*.rs'` should mean the same thing
+        // whether a `.rs` file lives on disk or inside a tarball. A
+        // skipped member's bytes still have to be drained below
+        // either way, since `tar` streams every member through this
+        // one shared pipe regardless of what gets matched.
+        let res = if globs.is_empty() || glob::is_file_included(Path::new(&entry.name), globs) {
+            search_reader(
+                patterns,
+                &archive_prefixed_file_path,
+                options,
+                &mut member_reader,
+                printer,
+            )
+        } else {
+            Ok(Outcome::Done)
+        };
 
         // `search_reader` may have stopped early (e.g. a binary
         // member), leaving bytes unread - drain them so the next

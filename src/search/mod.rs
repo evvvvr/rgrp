@@ -150,8 +150,8 @@ pub fn search(
     }
 
     match classify(path) {
-        FileType::Tar => search_tarball(patterns, path, options, printer),
-        FileType::Zip => search_zip(patterns, path, options, printer),
+        FileType::Tar => search_tarball(patterns, globs, path, options, printer),
+        FileType::Zip => search_zip(patterns, globs, path, options, printer),
         FileType::Compressed(format) => search_compressed(patterns, path, options, printer, format),
         FileType::Plain => search_plain(patterns, path, options, printer),
     }

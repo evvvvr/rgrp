@@ -4,6 +4,7 @@ use std::process::{Command, Stdio};
 
 use regex::bytes::Regex;
 
+use crate::glob::{self, GlobSpec};
 use crate::printer::FlushingPrinter;
 
 use super::super::{Error, Options, Outcome, SearchResult, search_reader};
@@ -90,6 +91,7 @@ fn list_zip_entries(path: &Path) -> Result<Vec<ArchiveEntry>, Error> {
 /// to the next.
 pub(in crate::search) fn search_zip(
     patterns: &[Regex],
+    globs: &[GlobSpec],
     path: &Path,
     options: &Options,
     printer: &mut FlushingPrinter<'_>,
@@ -118,13 +120,20 @@ pub(in crate::search) fn search_zip(
         let archive_prefixed_file_path = format!("{archive_path}:{}", entry.name);
         let mut member_reader = (&mut child_output).take(entry.size);
 
-        let res = search_reader(
-            patterns,
-            &archive_prefixed_file_path,
-            options,
-            &mut member_reader,
-            printer,
-        );
+        // Same reasoning as `search_tarball`'s own glob check (in
+        // `tar.rs`): matched against the member's own name, and a
+        // skipped member's bytes still have to be drained below.
+        let res = if globs.is_empty() || glob::is_file_included(Path::new(&entry.name), globs) {
+            search_reader(
+                patterns,
+                &archive_prefixed_file_path,
+                options,
+                &mut member_reader,
+                printer,
+            )
+        } else {
+            Ok(Outcome::Done)
+        };
 
         if let Err(drain_err) = io::copy(&mut member_reader, &mut io::sink()) {
             first_error.get_or_insert(Error::from(drain_err));
