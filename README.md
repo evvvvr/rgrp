@@ -108,7 +108,8 @@ For parallelism/concurrency:
 Benchmarks against `ripgrep` (`rg`), searching for `"function"` over a
 real-world `node_modules` directory (~1.2GB, ~58k files) and an equivalent
 `node_modules.tar.gz` built from that same tree (292MB compressed, 64,513
-entries), warm filesystem cache, single run each. `rg` is always run with
+entries), warm filesystem cache (single run, or a noted median of several
+where run-to-run variance mattered enough to bother). `rg` is always run with
 `-uu` (`--no-ignore --hidden`), since it respects `.gitignore`/hidden-file
 rules by default and `rgrp` has no such concept at all; otherwise both
 tools are given matching flags on each row.
@@ -117,17 +118,41 @@ tools are given matching flags on each row.
 
 | setting | tool | time | peak RSS | lines matched |
 |---|---|---|---|---|
-| default (skip binary) | `rgrp` | 2.32s | 90.3MB | 365,844 |
-| default (skip binary) | `rg` | 1.78s | 73.1MB | 365,844 |
-| `-a` (binary as text) | `rgrp` | 1.94s | 85.7MB | 368,669 |
-| `-a` (binary as text) | `rg` | 1.80s | 72.9MB | 368,669 |
+| default (skip binary) | `rgrp` | 1.70s | 69.3MB | 365,844 |
+| default (skip binary) | `rg` | 1.81s | 65.0MB | 365,844 |
+| `-a` (binary as text) | `rgrp` | 1.74s | 71.5MB | 368,669 |
+| `-a` (binary as text) | `rg` | 1.95s | 67.6MB | 368,669 |
 
-With matching flags, `rgrp` and `rg` agree exactly on every line matched in
-both configurations. `rg` is consistently faster here by ~15-20%; with ~58k
-mostly-small files, directory traversal and per-file `open`/`read`/`close`
-syscalls dominate over actual regex matching, so this workload is I/O-bound
-rather than CPU-bound, and neither tool comes close to saturating available
-cores.
+(Median of 5 runs each, after switching `rgrp`'s worker pool to work-stealing
+- see below. Before that, `rgrp` was consistently ~15-20% slower than `rg`
+here; it's now slightly faster instead, though `rg` still holds a modest
+memory edge.) With matching flags, `rgrp` and `rg` agree exactly on every
+line matched in both configurations. With ~58k mostly-small files,
+directory traversal and per-file `open`/`read`/`close` syscalls dominate
+over actual regex matching, so this workload is I/O-bound rather than
+CPU-bound, and neither tool comes close to saturating available cores.
+
+### Work-stealing vs. a shared queue
+
+Worker threads originally pulled paths off one `Condvar`/`Mutex`-guarded
+queue shared by the whole pool - every pop meant every thread briefly
+contending on the same lock. Replaced with a work-stealing pool (each
+thread drains its own local deque, only reaching for a shared queue or a
+peer's deque once its own runs dry), same directory/pattern as above,
+median of 3-5 runs each:
+
+| threads | before (shared queue) | after (work-stealing) | change |
+|---|---|---|---|
+| 1 | 7.5-7.9s | 7.4-7.8s | none (nothing to contend over with one thread) |
+| 4 | 2.12s | 2.00s | ~6% faster |
+| 8 | 1.17s | 0.91s | ~22% faster |
+| 16 | 1.05s | 0.81s | ~23% faster |
+
+The gap widens as thread count goes up, which is exactly the signature of
+a lock-contention problem rather than a raw-throughput one: the shared
+queue made adding threads fight over the same lock more often instead of
+doing more work in parallel, while work-stealing only pays any shared-queue
+cost when a thread's own local work actually runs out.
 
 ### Inside an archive (`-z`)
 
@@ -186,21 +211,27 @@ whole.
 
 ### Allocation overhead on dense matches
 
-Both workloads above have modest match density per file, so they don't
-exercise two smaller allocation fixes made along the way: reusing one
-match-offset buffer across every line of a file instead of allocating fresh
-per matching line, and removing a per-match intermediate `String`
-allocation in the colored printer. Isolated on a synthetic 2,000,000-line
-file where every line matches, warm cache, 3 runs each, piped output:
+The directory and archive workloads above have modest match density per
+file, so neither one actually exercises two smaller fixes to the per-line
+matching path:
+
+- reusing one match-offset buffer across every line of a file, instead of
+  allocating a fresh one for each matching line
+- writing a match's highlighted text straight into the output buffer,
+  instead of first building a throwaway `String` and copying that in
+
+To measure these specifically, this isolates a synthetic 2,000,000-line
+file where *every* line matches - warm cache, piped output, 3 runs each:
 
 | | before | after |
 |---|---|---|
-| user CPU time | 0.20s (×3) | 0.17-0.18s |
+| user CPU time | 0.20s, every run | 0.17-0.18s |
 | peak RSS | ~4.3MB | ~4.3MB (flat) |
 
-A consistent ~10-15% CPU-time reduction on this kind of dense-match file,
-output confirmed byte-identical between both versions. Memory is flat, as
-expected - this is about per-line allocation churn, not peak memory.
+A consistent ~10-15% CPU-time reduction on this dense-match workload,
+output confirmed byte-identical between both versions. Memory stays flat,
+as expected - these fixes target per-line allocation churn, not peak
+memory.
 
 ## License
 

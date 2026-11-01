@@ -7,7 +7,7 @@ use std::process::Command;
 use common::{SharedRecorder, walk};
 use regex::bytes::Regex;
 use rgrp::glob;
-use rgrp::search;
+use rgrp::search::MatchConfig;
 use tempfile::tempdir;
 
 fn make_tarball(src_dir: &Path, archive_path: &Path) {
@@ -33,14 +33,6 @@ fn make_zip(src_dir: &Path, archive_path: &Path) {
     assert!(status.success());
 }
 
-fn archive_search_options() -> search::Options {
-    search::Options {
-        invert_matches: false,
-        search_archives: true,
-        ..Default::default()
-    }
-}
-
 #[test]
 fn finds_matches_inside_a_tarball() {
     let dir = tempdir().unwrap();
@@ -54,10 +46,12 @@ fn finds_matches_inside_a_tarball() {
     let recorder = SharedRecorder::new();
     let re = Regex::new("needle").unwrap();
     walk(
-        &[re],
-        &[],
+        &MatchConfig {
+            patterns: &[re],
+            search_archives: true,
+            ..Default::default()
+        },
         &archive,
-        &archive_search_options(),
         &mut || recorder.printer(),
     )
     .unwrap();
@@ -78,10 +72,12 @@ fn finds_matches_inside_a_zip() {
     let recorder = SharedRecorder::new();
     let re = Regex::new("needle").unwrap();
     walk(
-        &[re],
-        &[],
+        &MatchConfig {
+            patterns: &[re],
+            search_archives: true,
+            ..Default::default()
+        },
         &archive,
-        &archive_search_options(),
         &mut || recorder.printer(),
     )
     .unwrap();
@@ -104,10 +100,13 @@ fn a_glob_filters_which_tarball_members_get_searched() {
     let re = Regex::new("needle").unwrap();
     let globs = [glob::compile("*.rs", false).unwrap()];
     walk(
-        &[re],
-        &globs,
+        &MatchConfig {
+            patterns: &[re],
+            globs: &globs,
+            search_archives: true,
+            ..Default::default()
+        },
         &archive,
-        &archive_search_options(),
         &mut || recorder.printer(),
     )
     .unwrap();
@@ -132,10 +131,13 @@ fn a_glob_filters_which_zip_members_get_searched() {
     let re = Regex::new("needle").unwrap();
     let globs = [glob::compile("*.rs", false).unwrap()];
     walk(
-        &[re],
-        &globs,
+        &MatchConfig {
+            patterns: &[re],
+            globs: &globs,
+            search_archives: true,
+            ..Default::default()
+        },
         &archive,
-        &archive_search_options(),
         &mut || recorder.printer(),
     )
     .unwrap();

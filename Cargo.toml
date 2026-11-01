@@ -9,7 +9,7 @@ readme = "README.md"
 
 [dependencies]
 clap = { version = "4.6.7", default-features = false, features = ["derive", "std", "help", "usage", "error-context"] }
-crossbeam-queue = "0.3.14"
+crossbeam-deque = "0.8.8"
 ctrlc = "3.5.2"
 globset = "0.4.21"
 owo-colors = "4.4.0"

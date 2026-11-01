@@ -1,4 +1,5 @@
 use std::fmt::Write;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use owo_colors::OwoColorize;
 
@@ -24,6 +25,54 @@ pub trait Printer: Send + Sync {
     /// fresh.
     /// E.g. tarball archive uses one printer and resets per archive entry.
     fn reset(&mut self);
+}
+
+/// Where a worker's finished output actually goes. The only
+/// implementation is [`LockedSink`]; the trait exists so `emit`'s
+/// shape doesn't hardcode what it's wrapping.
+pub(crate) trait OutputSink {
+    fn write(&mut self, output: &str);
+}
+
+/// Serializes calls to an injected `write_raw` against whatever else is
+/// writing output at the same time, for as long as this lives - one
+/// instance is meant to cover one path (matching the [`FlushingPrinter`]
+/// it feeds), so one lock acquisition covers a whole path, archive
+/// members included, not just one chunk.
+///
+/// `write_raw` is the caller of `run()`'s own choice of destination
+/// (stdout, in practice, via `|s| print!("{s}")`) - this only owns the
+/// locking, not where bytes actually end up.
+///
+/// Acquired lazily, on the first chunk a path actually has something
+/// to write; a path with no matches never touches the lock at all.
+pub(crate) struct LockedSink<'a> {
+    lock: &'a Mutex<()>,
+    guard: Option<MutexGuard<'a, ()>>,
+    write_raw: &'a (dyn Fn(&str) + Send + Sync),
+}
+
+impl<'a> LockedSink<'a> {
+    pub(crate) fn new(lock: &'a Mutex<()>, write_raw: &'a (dyn Fn(&str) + Send + Sync)) -> Self {
+        Self {
+            lock,
+            guard: None,
+            write_raw,
+        }
+    }
+}
+
+impl<'a> OutputSink for LockedSink<'a> {
+    /// Locks on first use. Recovers from poisoning rather than
+    /// `.unwrap()`-ing: this mutex only ever guards `()`, so one
+    /// writer panicking while holding it should never cascade into
+    /// every other writer's lock attempt panicking too.
+    fn write(&mut self, output: &str) {
+        if self.guard.is_none() {
+            self.guard = Some(self.lock.lock().unwrap_or_else(PoisonError::into_inner));
+        }
+        (self.write_raw)(output);
+    }
 }
 
 /// How large a buffered chunk can grow before `FlushingPrinter` sends

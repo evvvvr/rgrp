@@ -30,10 +30,12 @@ fn main() -> ExitCode {
         }
     };
 
+    let write_output = |s: &str| print!("{s}");
+
     let result = if no_terminal {
-        run(&options, MonochromePrinter::new, on_error)
+        run(&options, MonochromePrinter::new, write_output, on_error)
     } else {
-        run(&options, ColorPrinter::new, on_error)
+        run(&options, ColorPrinter::new, write_output, on_error)
     };
 
     match result {

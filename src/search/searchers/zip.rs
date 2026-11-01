@@ -2,12 +2,10 @@ use std::io::{self, Read};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use regex::bytes::Regex;
-
-use crate::glob::{self, GlobSpec};
+use crate::glob;
 use crate::printer::FlushingPrinter;
 
-use super::super::{Error, Options, Outcome, SearchResult, search_reader};
+use super::super::{Error, MatchConfig, Outcome, SearchResult, search_reader};
 use super::{ArchiveEntry, check_exit_status};
 
 /// Parses one entry line of `unzip -v`'s verbose listing, e.g.:
@@ -90,10 +88,8 @@ fn list_zip_entries(path: &Path) -> Result<Vec<ArchiveEntry>, Error> {
 /// byte count (from `list_zip_entries`) off that stream before moving
 /// to the next.
 pub(in crate::search) fn search_zip(
-    patterns: &[Regex],
-    globs: &[GlobSpec],
+    config: &MatchConfig,
     path: &Path,
-    options: &Options,
     printer: &mut FlushingPrinter<'_>,
 ) -> SearchResult {
     let entries = list_zip_entries(path)?;
@@ -123,14 +119,10 @@ pub(in crate::search) fn search_zip(
         // Same reasoning as `search_tarball`'s own glob check (in
         // `tar.rs`): matched against the member's own name, and a
         // skipped member's bytes still have to be drained below.
-        let res = if globs.is_empty() || glob::is_file_included(Path::new(&entry.name), globs) {
-            search_reader(
-                patterns,
-                &archive_prefixed_file_path,
-                options,
-                &mut member_reader,
-                printer,
-            )
+        let res = if config.globs.is_empty()
+            || glob::is_file_included(Path::new(&entry.name), config.globs)
+        {
+            search_reader(config, &archive_prefixed_file_path, &mut member_reader, printer)
         } else {
             Ok(Outcome::Ignored)
         };
