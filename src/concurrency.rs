@@ -4,7 +4,7 @@ use std::iter;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
 
@@ -68,6 +68,14 @@ struct WorkerQueue {
     /// `WorkerQueue`, not per-worker.
     active_workers: Arc<AtomicUsize>,
     shared_state: Arc<SharedWorkState>,
+    /// This worker's own clone of the shared output channel - kept
+    /// here (not on `SharedWorkState`) specifically so `WorkersHandle`
+    /// never ends up holding a live sender on itself: it keeps its own
+    /// `Arc<SharedWorkState>` clone around after the channel closes,
+    /// to check `cancelled` once every worker is done, and a sender
+    /// living there would mean the channel could never close while
+    /// something's still waiting to drain it.
+    output_tx: Sender<Result<String, (SearchError, PathBuf)>>,
 }
 
 impl WorkerQueue {
@@ -131,6 +139,17 @@ impl WorkerQueue {
 
     fn task_done(&self) {
         self.active_workers.fetch_sub(1, Ordering::AcqRel);
+    }
+
+    /// Reports one chunk of a path's rendered output.
+    fn report_output(&self, output: String) {
+        let _ = self.output_tx.send(Ok(output));
+    }
+
+    /// Reports that a path failed outright (an `Err` from `search`, or
+    /// a caught panic turned into [`crate::search::Error::WorkerPanicked`]).
+    fn report_error(&self, err: SearchError, path: PathBuf) {
+        let _ = self.output_tx.send(Err((err, path)));
     }
 }
 
@@ -280,6 +299,7 @@ pub(crate) fn spawn_workers(
             stealers: Arc::clone(&stealers),
             active_workers: Arc::clone(&active_workers),
             shared_state: Arc::clone(&shared_state),
+            output_tx: output_tx.clone(),
         };
         let make_printer = Arc::clone(&make_printer);
         let patterns = opts.config.patterns.to_vec();
@@ -296,7 +316,6 @@ pub(crate) fn spawn_workers(
             search_archives,
             ..
         } = opts.config;
-        let output_tx = output_tx.clone();
 
         let thread = thread::spawn(move || {
             let config = MatchConfig {
@@ -335,7 +354,7 @@ pub(crate) fn spawn_workers(
                                     .unwrap_or_else(std::sync::PoisonError::into_inner),
                             );
                         }
-                        let _ = output_tx.send(Result::Ok(output));
+                        queue.report_output(output);
                     };
                     let mut flushing_printer = FlushingPrinter::new(&mut *printer, &mut emit);
 
@@ -348,12 +367,11 @@ pub(crate) fn spawn_workers(
                 match search_result {
                     Ok(Ok(_outcome)) => {}
                     Ok(Err(err)) => {
-                        let _ = output_tx.send(Result::Err((err, path)));
+                        queue.report_error(err, path);
                     }
                     Err(panic_payload) => {
                         let message = panic_message(&panic_payload);
-                        let _ =
-                            output_tx.send(Result::Err((SearchError::WorkerPanicked(message), path)));
+                        queue.report_error(SearchError::WorkerPanicked(message), path);
                     }
                 }
 
