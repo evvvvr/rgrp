@@ -129,6 +129,28 @@ syscalls dominate over actual regex matching, so this workload is I/O-bound
 rather than CPU-bound, and neither tool comes close to saturating available
 cores.
 
+### Work-stealing vs. a shared queue
+
+Worker threads originally pulled paths off one `Condvar`/`Mutex`-guarded
+queue shared by the whole pool - every pop meant every thread briefly
+contending on the same lock. Replaced with a work-stealing pool (each
+thread drains its own local deque, only reaching for a shared queue or a
+peer's deque once its own runs dry), same directory/pattern as above,
+median of 3-5 runs each:
+
+| threads | before (shared queue) | after (work-stealing) | change |
+|---|---|---|---|
+| 1 | 7.5-7.9s | 7.4-7.8s | none (nothing to contend over with one thread) |
+| 4 | 2.12s | 2.00s | ~6% faster |
+| 8 | 1.17s | 0.91s | ~22% faster |
+| 16 | 1.05s | 0.81s | ~23% faster |
+
+The gap widens as thread count goes up, which is exactly the signature of
+a lock-contention problem rather than a raw-throughput one: the shared
+queue made adding threads fight over the same lock more often instead of
+doing more work in parallel, while work-stealing only pays any shared-queue
+cost when a thread's own local work actually runs out.
+
 ### Inside an archive (`-z`)
 
 `-z` unpacks zip/tar archives and gzip/bzip2/xz/etc-compressed files instead
