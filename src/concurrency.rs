@@ -1,4 +1,5 @@
 use crossbeam_deque::{Injector, Stealer, Worker};
+use regex::bytes::Regex;
 use std::collections::HashSet;
 use std::iter;
 use std::panic::{self, AssertUnwindSafe};
@@ -8,7 +9,8 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
 
-use crate::printer::{FlushingPrinter, Printer};
+use crate::glob::GlobSpec;
+use crate::printer::{FlushingPrinter, LockedSink, OutputSink, Printer};
 use crate::search::{Error as SearchError, MatchConfig, WorkQueue, search};
 
 /// State shared across a whole run, regardless of which queueing
@@ -68,14 +70,20 @@ struct WorkerQueue {
     /// `WorkerQueue`, not per-worker.
     active_workers: Arc<AtomicUsize>,
     shared_state: Arc<SharedWorkState>,
-    /// This worker's own clone of the shared output channel - kept
-    /// here (not on `SharedWorkState`) specifically so `WorkersHandle`
-    /// never ends up holding a live sender on itself: it keeps its own
-    /// `Arc<SharedWorkState>` clone around after the channel closes,
-    /// to check `cancelled` once every worker is done, and a sender
-    /// living there would mean the channel could never close while
-    /// something's still waiting to drain it.
-    output_tx: Sender<Result<String, (SearchError, PathBuf)>>,
+    /// This worker's own clone of the shared error-reporting channel -
+    /// kept here (not on `SharedWorkState`) specifically so
+    /// `WorkersHandle` never ends up holding a live sender on itself:
+    /// it keeps its own `Arc<SharedWorkState>` clone around after the
+    /// channel closes, to check `cancelled` once every worker is done,
+    /// and a sender living there would mean the channel could never
+    /// close while something's still waiting to drain it.
+    ///
+    /// Successful output never travels over this (or any) channel - it's
+    /// printed directly by the worker that produced it, while holding
+    /// `shared_state.print_lock`; only a failed path is reported back
+    /// to the calling thread, since `on_error` is a plain `FnMut` that's
+    /// only ever called there.
+    error_tx: Sender<(SearchError, PathBuf)>,
 }
 
 impl WorkerQueue {
@@ -141,15 +149,10 @@ impl WorkerQueue {
         self.active_workers.fetch_sub(1, Ordering::AcqRel);
     }
 
-    /// Reports one chunk of a path's rendered output.
-    fn report_output(&self, output: String) {
-        let _ = self.output_tx.send(Ok(output));
-    }
-
     /// Reports that a path failed outright (an `Err` from `search`, or
     /// a caught panic turned into [`crate::search::Error::WorkerPanicked`]).
     fn report_error(&self, err: SearchError, path: PathBuf) {
-        let _ = self.output_tx.send(Err((err, path)));
+        let _ = self.error_tx.send((err, path));
     }
 }
 
@@ -182,33 +185,28 @@ pub(crate) enum RunOutcome {
 }
 
 /// What `spawn_workers` hands back - the workers are already running;
-/// call [`WorkersHandle::consume_with`] to see their output and find
-/// out whether anything failed.
+/// call [`WorkersHandle::consume_with`] to find out whether anything
+/// failed - output was already printed as it was found.
 pub(crate) struct WorkersHandle {
     threads: Vec<JoinHandle<()>>,
-    output_rx: Receiver<Result<String, (SearchError, PathBuf)>>,
+    error_rx: Receiver<(SearchError, PathBuf)>,
     shared_state: Arc<SharedWorkState>,
 }
 
 impl WorkersHandle {
-    /// Drains results until every worker has finished, then joins them.
-    /// Call this exactly once. `on_output` is called with each file's
-    /// buffered output as it arrives; `on_error` once per failed path.
+    /// Drains errors until every worker has finished, then joins them.
+    /// Call this exactly once. Successful output was already printed
+    /// directly by whichever worker produced it; `on_error` is called
+    /// here, on the calling thread, once per failed path.
     pub(crate) fn consume_with(
         self,
-        mut on_output: impl FnMut(String),
         mut on_error: impl FnMut(SearchError, &Path),
     ) -> Result<RunOutcome, SearchFailed> {
         let mut had_error = false;
 
-        for res in self.output_rx {
-            match res {
-                Ok(output) => on_output(output),
-                Err((err, path)) => {
-                    had_error = true;
-                    on_error(err, &path);
-                }
-            }
+        for (err, path) in self.error_rx {
+            had_error = true;
+            on_error(err, &path);
         }
 
         for thread in self.threads {
@@ -223,6 +221,30 @@ impl WorkersHandle {
             Ok(RunOutcome::Cancelled)
         } else {
             Ok(RunOutcome::Completed)
+        }
+    }
+}
+
+/// The patterns/globs-independent behavior knobs out of `MatchConfig`,
+/// as a `'static`, `Copy` bundle a worker thread can own outright -
+/// `MatchConfig` itself can't move into a `'static` thread closure,
+/// since its `patterns`/`globs` fields still borrow from `opts`, which
+/// doesn't outlive `spawn_workers`.
+#[derive(Clone, Copy)]
+struct MatchBehavior {
+    invert_matches: bool,
+    search_binary: bool,
+    crlf: bool,
+    search_archives: bool,
+}
+
+impl From<MatchConfig<'_>> for MatchBehavior {
+    fn from(config: MatchConfig<'_>) -> Self {
+        Self {
+            invert_matches: config.invert_matches,
+            search_binary: config.search_binary,
+            crlf: config.crlf,
+            search_archives: config.search_archives,
         }
     }
 }
@@ -242,32 +264,22 @@ pub(crate) struct SpawnOptions<'a> {
 /// Starts the worker thread pool and returns a handle to its results;
 /// the workers are already running by the time this returns.
 ///
-/// `make_printer` is called once per path a worker picks up, shared
-/// across threads behind an `Arc`, so it needs to be `Send + Sync`.
+/// `make_printer` and `write_output` are both shared across threads
+/// behind an `Arc`, so both need to be `Send + Sync`. `make_printer` is
+/// called once per worker thread; `write_output` once per chunk of
+/// output a worker has decided is definitely going out (see
+/// [`crate::printer::LockedSink`]).
 pub(crate) fn spawn_workers(
     opts: SpawnOptions,
     make_printer: impl Fn() -> Box<dyn Printer> + Send + Sync + 'static,
+    write_output: impl Fn(&str) + Send + Sync + 'static,
 ) -> WorkersHandle {
     let shared_state = Arc::new(SharedWorkState::new(opts.files));
-    let make_printer = Arc::new(make_printer);
+    let make_printer: Arc<dyn Fn() -> Box<dyn Printer> + Send + Sync> = Arc::new(make_printer);
+    let write_output: Arc<dyn Fn(&str) + Send + Sync> = Arc::new(write_output);
+    let behavior = MatchBehavior::from(opts.config);
 
-    // Only the first registration per process takes effect - harmless
-    // to ignore a second one, which only happens when several tests
-    // call `run()` in the same binary.
-    let cancel_state = Arc::clone(&shared_state);
-    let _ = ctrlc::set_handler(move || {
-        // A second Ctrl-C while workers are still finishing means
-        // "stop now" - skip the graceful path entirely. No condvar to
-        // hold here: workers never block waiting for a wakeup, they
-        // poll `cancelled` once per loop iteration, so a plain swap is
-        // enough for them to notice on their very next spin.
-        let already_cancelled = cancel_state.cancelled.swap(true, Ordering::AcqRel);
-
-        if already_cancelled {
-            eprintln!("rgrp: second interrupt, exiting immediately");
-            std::process::exit(130);
-        }
-    });
+    install_cancel_handler(&shared_state);
 
     let mut threads: Vec<JoinHandle<()>> = Vec::new();
 
@@ -290,7 +302,7 @@ pub(crate) fn spawn_workers(
         Arc::new(local_queues.iter().map(Worker::stealer).collect());
     let active_workers = Arc::new(AtomicUsize::new(0));
 
-    let (output_tx, output_rx) = mpsc::channel::<Result<String, (SearchError, PathBuf)>>();
+    let (error_tx, error_rx) = mpsc::channel::<(SearchError, PathBuf)>();
 
     for local_queue in local_queues {
         let queue = WorkerQueue {
@@ -299,102 +311,120 @@ pub(crate) fn spawn_workers(
             stealers: Arc::clone(&stealers),
             active_workers: Arc::clone(&active_workers),
             shared_state: Arc::clone(&shared_state),
-            output_tx: output_tx.clone(),
+            error_tx: error_tx.clone(),
         };
         let make_printer = Arc::clone(&make_printer);
+        let write_output = Arc::clone(&write_output);
         let patterns = opts.config.patterns.to_vec();
         let globs = opts.config.globs.to_vec();
-        // The behavior knobs alone, pulled out by value so they (being
-        // plain `bool`s) can move into the 'static thread closure on
-        // their own - `opts.config` itself can't, since its `patterns`/
-        // `globs` fields still borrow from `opts`, which doesn't
-        // outlive this function.
-        let MatchConfig {
-            invert_matches,
-            search_binary,
-            crlf,
-            search_archives,
-            ..
-        } = opts.config;
 
-        let thread = thread::spawn(move || {
-            let config = MatchConfig {
-                patterns: &patterns,
-                globs: &globs,
-                invert_matches,
-                search_binary,
-                crlf,
-                search_archives,
-            };
-            // One instance for this whole thread's lifetime, not one
-            // per path - `FlushingPrinter::finish`/`discard` already
-            // call `Printer::reset` at the end of every file (or, for
-            // an archive, every member), which is exactly the per-file
-            // state (e.g. "have I printed this file's name yet") a
-            // reused instance needs cleared between paths anyway.
-            let mut printer = make_printer();
-
-            while let Some(path) = queue.find_next() {
-                queue.task_started();
-
-                let search_result = panic::catch_unwind(AssertUnwindSafe(|| {
-                    // Acquired on this path's first chunk and held
-                    // through its later ones, so no other path's
-                    // output can interleave. Released once this
-                    // closure finishes. Never touched by a path with
-                    // no matches.
-                    let mut print_guard: Option<std::sync::MutexGuard<'_, ()>> = None;
-                    let mut emit = |output: String| {
-                        if print_guard.is_none() {
-                            // Recovers from poisoning rather than
-                            // `.unwrap()`-ing: this mutex only ever
-                            // guards `()`, so one worker panicking
-                            // while holding it should never cascade
-                            // into every other worker's lock attempt
-                            // panicking too.
-                            print_guard = Some(
-                                queue
-                                    .shared_state
-                                    .print_lock
-                                    .lock()
-                                    .unwrap_or_else(std::sync::PoisonError::into_inner),
-                            );
-                        }
-                        queue.report_output(output);
-                    };
-                    let mut flushing_printer = FlushingPrinter::new(&mut *printer, &mut emit);
-
-                    search(&config, &path, &mut flushing_printer, &queue)
-                }));
-
-                // On success, output was already sent to `emit` as
-                // each member finished, so only an error is left to
-                // report here.
-                match search_result {
-                    Ok(Ok(_outcome)) => {}
-                    Ok(Err(err)) => {
-                        queue.report_error(err, path);
-                    }
-                    Err(panic_payload) => {
-                        let message = panic_message(&panic_payload);
-                        queue.report_error(SearchError::WorkerPanicked(message), path);
-                    }
-                }
-
-                queue.task_done();
-            }
-        });
+        let thread =
+            thread::spawn(move || worker_loop(queue, patterns, globs, behavior, make_printer, write_output));
         threads.push(thread);
     }
 
     // Drop the original sender so the channel closes once every
     // worker's clone is also dropped.
-    drop(output_tx);
+    drop(error_tx);
 
     WorkersHandle {
         threads,
-        output_rx,
+        error_rx,
         shared_state,
+    }
+}
+
+/// Installs the Ctrl-C handler for a whole run. Only the first
+/// registration per process takes effect - harmless to ignore a
+/// second one, which only happens when several tests call `run()` in
+/// the same binary.
+fn install_cancel_handler(shared_state: &Arc<SharedWorkState>) {
+    let cancel_state = Arc::clone(shared_state);
+    let _ = ctrlc::set_handler(move || {
+        // A second Ctrl-C while workers are still finishing means
+        // "stop now" - skip the graceful path entirely. No condvar to
+        // hold here: workers never block waiting for a wakeup, they
+        // poll `cancelled` once per loop iteration, so a plain swap is
+        // enough for them to notice on their very next spin.
+        let already_cancelled = cancel_state.cancelled.swap(true, Ordering::AcqRel);
+
+        if already_cancelled {
+            eprintln!("rgrp: second interrupt, exiting immediately");
+            std::process::exit(130);
+        }
+    });
+}
+
+/// One worker thread's whole lifetime: pulls paths until there's
+/// nothing left or the run is cancelled, searching each one with one
+/// `Printer` instance reused across all of them (see
+/// `FlushingPrinter::finish`/`discard`'s per-file `reset` for why
+/// that's safe).
+fn worker_loop(
+    queue: WorkerQueue,
+    patterns: Vec<Regex>,
+    globs: Vec<GlobSpec>,
+    behavior: MatchBehavior,
+    make_printer: Arc<dyn Fn() -> Box<dyn Printer> + Send + Sync>,
+    write_output: Arc<dyn Fn(&str) + Send + Sync>,
+) {
+    let config = MatchConfig {
+        patterns: &patterns,
+        globs: &globs,
+        invert_matches: behavior.invert_matches,
+        search_binary: behavior.search_binary,
+        crlf: behavior.crlf,
+        search_archives: behavior.search_archives,
+    };
+
+    let mut printer = make_printer();
+
+    while let Some(path) = queue.find_next() {
+        queue.task_started();
+        search_one_path(&queue, &mut *printer, &*write_output, &config, path);
+        queue.task_done();
+    }
+}
+
+/// Searches one path, catching a panic so one bad file can't take the
+/// whole worker thread down, and reports whatever happened back
+/// through `queue`.
+fn search_one_path(
+    queue: &WorkerQueue,
+    printer: &mut dyn Printer,
+    write_output: &(dyn Fn(&str) + Send + Sync),
+    config: &MatchConfig,
+    path: PathBuf,
+) {
+    let search_result = panic::catch_unwind(AssertUnwindSafe(|| {
+        // `LockedSink` holds the print lock lazily for as long as it
+        // lives, which here is exactly one path - so no other path's
+        // output can interleave with this one's, but a path with no
+        // matches never touches the lock at all.
+        let mut sink = LockedSink::new(&queue.shared_state.print_lock, write_output);
+        let mut emit = |output: String| sink.write(&output);
+        let mut flushing_printer = FlushingPrinter::new(&mut *printer, &mut emit);
+
+        search(config, &path, &mut flushing_printer, queue)
+    }));
+
+    // On success, output was already sent to `emit` as each member
+    // finished, so only an error is left to report here.
+    match search_result {
+        Ok(Ok(_outcome)) => {}
+        Ok(Err(err)) => {
+            queue.report_error(err, path);
+        }
+        Err(panic_payload) => {
+            let message = panic_message(&panic_payload);
+            queue.report_error(SearchError::WorkerPanicked(message), path);
+            // A panic can leave the reused `printer` holding per-file
+            // state (e.g. "have I printed this file's name yet") from
+            // whatever path it was mid-rendering - `finish`/`discard`
+            // never ran to clear it, so the next path this thread
+            // picks up would otherwise inherit it.
+            printer.reset();
+        }
     }
 }
 

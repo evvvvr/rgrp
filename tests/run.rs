@@ -31,6 +31,7 @@ fn reports_matches_from_good_paths_and_errors_for_bad_ones() {
     let result = run(
         &options,
         move || recorder_for_closure.printer(),
+        |_output| {},
         move |_err, path| {
             errors_for_closure
                 .lock()
@@ -70,6 +71,7 @@ fn succeeds_when_every_path_is_valid() {
     let result = run(
         &options,
         move || recorder_for_closure.printer(),
+        |_output| {},
         move |_err, path| {
             errors_for_closure
                 .lock()
@@ -103,6 +105,7 @@ fn ignore_case_matches_regardless_of_letter_case() {
     let result = run(
         &options,
         move || recorder_for_closure.printer(),
+        |_output| {},
         |_err, _path| {},
     );
 
@@ -132,6 +135,7 @@ fn without_ignore_case_only_exact_case_matches() {
     let result = run(
         &options,
         move || recorder_for_closure.printer(),
+        |_output| {},
         |_err, _path| {},
     );
 
@@ -161,6 +165,7 @@ fn invert_match_reports_lines_that_do_not_match() {
     let result = run(
         &options,
         move || recorder_for_closure.printer(),
+        |_output| {},
         |_err, _path| {},
     );
 
