@@ -108,7 +108,8 @@ For parallelism/concurrency:
 Benchmarks against `ripgrep` (`rg`), searching for `"function"` over a
 real-world `node_modules` directory (~1.2GB, ~58k files) and an equivalent
 `node_modules.tar.gz` built from that same tree (292MB compressed, 64,513
-entries), warm filesystem cache, single run each. `rg` is always run with
+entries), warm filesystem cache (single run, or a noted median of several
+where run-to-run variance mattered enough to bother). `rg` is always run with
 `-uu` (`--no-ignore --hidden`), since it respects `.gitignore`/hidden-file
 rules by default and `rgrp` has no such concept at all; otherwise both
 tools are given matching flags on each row.
@@ -117,17 +118,19 @@ tools are given matching flags on each row.
 
 | setting | tool | time | peak RSS | lines matched |
 |---|---|---|---|---|
-| default (skip binary) | `rgrp` | 2.32s | 90.3MB | 365,844 |
-| default (skip binary) | `rg` | 1.78s | 73.1MB | 365,844 |
-| `-a` (binary as text) | `rgrp` | 1.94s | 85.7MB | 368,669 |
-| `-a` (binary as text) | `rg` | 1.80s | 72.9MB | 368,669 |
+| default (skip binary) | `rgrp` | 1.70s | 69.3MB | 365,844 |
+| default (skip binary) | `rg` | 1.81s | 65.0MB | 365,844 |
+| `-a` (binary as text) | `rgrp` | 1.74s | 71.5MB | 368,669 |
+| `-a` (binary as text) | `rg` | 1.95s | 67.6MB | 368,669 |
 
-With matching flags, `rgrp` and `rg` agree exactly on every line matched in
-both configurations. `rg` is consistently faster here by ~15-20%; with ~58k
-mostly-small files, directory traversal and per-file `open`/`read`/`close`
-syscalls dominate over actual regex matching, so this workload is I/O-bound
-rather than CPU-bound, and neither tool comes close to saturating available
-cores.
+(Median of 5 runs each, after switching `rgrp`'s worker pool to work-stealing
+- see below. Before that, `rgrp` was consistently ~15-20% slower than `rg`
+here; it's now slightly faster instead, though `rg` still holds a modest
+memory edge.) With matching flags, `rgrp` and `rg` agree exactly on every
+line matched in both configurations. With ~58k mostly-small files,
+directory traversal and per-file `open`/`read`/`close` syscalls dominate
+over actual regex matching, so this workload is I/O-bound rather than
+CPU-bound, and neither tool comes close to saturating available cores.
 
 ### Work-stealing vs. a shared queue
 
