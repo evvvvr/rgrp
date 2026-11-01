@@ -326,12 +326,18 @@ pub(crate) fn spawn_workers(
                 crlf,
                 search_archives,
             };
+            // One instance for this whole thread's lifetime, not one
+            // per path - `FlushingPrinter::finish`/`discard` already
+            // call `Printer::reset` at the end of every file (or, for
+            // an archive, every member), which is exactly the per-file
+            // state (e.g. "have I printed this file's name yet") a
+            // reused instance needs cleared between paths anyway.
+            let mut printer = make_printer();
 
             while let Some(path) = queue.find_next() {
                 queue.task_started();
 
                 let search_result = panic::catch_unwind(AssertUnwindSafe(|| {
-                    let mut printer = make_printer();
                     // Acquired on this path's first chunk and held
                     // through its later ones, so no other path's
                     // output can interleave. Released once this
