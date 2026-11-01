@@ -64,25 +64,6 @@ pub enum Outcome {
 
 type SearchResult = Result<Outcome, Error>;
 
-/// Knobs that change how a search behaves, independent of the pattern(s)
-/// used or which path is being searched.
-#[derive(Clone, Copy, Default)]
-pub struct Options {
-    /// When true, report lines that *don't* match any pattern instead of
-    /// lines that do.
-    pub invert_matches: bool,
-    /// When true, a file that looks binary is searched as text instead
-    /// of skipped. Mirrors ripgrep's `-a`/`--text`.
-    pub search_binary: bool,
-    /// When true, a trailing `\r` before `\n` is stripped as part of
-    /// the line terminator. Mirrors ripgrep's `--crlf`.
-    pub crlf: bool,
-    /// When true, zip/tar archives and compressed files are unpacked
-    /// and searched inside; when false, they're read as opaque binary
-    /// data like any other file. Mirrors ripgrep's `-z`/`--search-zip`.
-    pub search_archives: bool,
-}
-
 /// Somewhere a directory's entries can be handed off for someone else
 /// to pick up later - what makes a directory walk parallel.
 pub trait WorkQueue {
@@ -98,14 +79,39 @@ pub trait WorkQueue {
     fn is_seed_path(&self, path: &Path) -> bool;
 }
 
-/// Searches one path against `patterns`. A file is read line by line
-/// and matched directly. A directory isn't recursed into here - its
-/// entries are handed to `WorkQueue`.
+/// What every search shares for a whole run: the patterns being
+/// matched, the globs deciding which paths are even considered, and
+/// the behavior knobs that used to live in a separate `Options` type -
+/// folded in here instead, since nothing ever used them apart from
+/// `patterns`/`globs` anyway. Always passed together: from [`search`]
+/// down through every one of its own internal calls.
+#[derive(Clone, Copy, Default)]
+pub struct MatchConfig<'a> {
+    pub patterns: &'a [Regex],
+    /// Only paths matching at least one of these are searched; every
+    /// path is searched if this is empty.
+    pub globs: &'a [GlobSpec],
+    /// When true, report lines that *don't* match any pattern instead
+    /// of lines that do.
+    pub invert_matches: bool,
+    /// When true, a file that looks binary is searched as text
+    /// instead of skipped. Mirrors ripgrep's `-a`/`--text`.
+    pub search_binary: bool,
+    /// When true, a trailing `\r` before `\n` is stripped as part of
+    /// the line terminator. Mirrors ripgrep's `--crlf`.
+    pub crlf: bool,
+    /// When true, zip/tar archives and compressed files are unpacked
+    /// and searched inside; when false, they're read as opaque binary
+    /// data like any other file. Mirrors ripgrep's `-z`/`--search-zip`.
+    pub search_archives: bool,
+}
+
+/// Searches one path against `config.patterns`. A file is read line by
+/// line and matched directly. A directory isn't recursed into here -
+/// its entries are handed to `WorkQueue`.
 pub fn search(
-    patterns: &[Regex],
-    globs: &[GlobSpec],
+    config: &MatchConfig,
     path: &Path,
-    options: &Options,
     printer: &mut FlushingPrinter<'_>,
     queue: &impl WorkQueue,
 ) -> SearchResult {
@@ -125,11 +131,11 @@ pub fn search(
     // the same way. Checking here instead, with that one exemption,
     // means a path's own glob decision is made exactly once, in
     // exactly one place, regardless of how it was reached.
-    if !globs.is_empty() && !queue.is_seed_path(path) {
+    if !config.globs.is_empty() && !queue.is_seed_path(path) {
         let excluded = if metadata.is_dir() {
-            glob::is_dir_pruned(path, globs)
+            glob::is_dir_pruned(path, config.globs)
         } else {
-            !glob::is_file_included(path, globs)
+            !glob::is_file_included(path, config.globs)
         };
         if excluded {
             return Ok(Outcome::Ignored);
@@ -152,27 +158,26 @@ pub fn search(
         return Ok(Outcome::Done);
     }
 
-    if !options.search_archives {
-        return search_plain(patterns, path, options, printer);
+    if !config.search_archives {
+        return search_plain(config, path, printer);
     }
 
     match classify(path) {
-        FileType::Tar => search_tarball(patterns, globs, path, options, printer),
-        FileType::Zip => search_zip(patterns, globs, path, options, printer),
-        FileType::Compressed(format) => search_compressed(patterns, path, options, printer, format),
-        FileType::Plain => search_plain(patterns, path, options, printer),
+        FileType::Tar => search_tarball(config, path, printer),
+        FileType::Zip => search_zip(config, path, printer),
+        FileType::Compressed(format) => search_compressed(config, path, printer, format),
+        FileType::Plain => search_plain(config, path, printer),
     }
 }
 
 /// Reads one logical file's worth of lines (a whole plain file, or one
-/// archive member) and matches them against `patterns`. Flushes
+/// archive member) and matches them against `config.patterns`. Flushes
 /// `printer`'s buffer to its emit callback as soon as it's done, so a
 /// caller looping over an archive's members gets each one's output as
 /// it finishes.
 fn search_reader(
-    patterns: &[Regex],
+    config: &MatchConfig,
     file_path: &str,
-    options: &Options,
     mut reader: impl Read,
     flushing_printer: &mut FlushingPrinter<'_>,
 ) -> Result<Outcome, Error> {
@@ -182,9 +187,9 @@ fn search_reader(
 
     let mut on_read_line = |line: &[u8]| {
         let matched = match_line(
-            patterns,
+            config.patterns,
             &MatchOptions {
-                invert_matches: options.invert_matches,
+                invert_matches: config.invert_matches,
             },
             line,
             &mut line_matches,
@@ -200,8 +205,8 @@ fn search_reader(
     let res = read_lines(
         &mut reader,
         ReadOptions {
-            skip_on_null: !options.search_binary,
-            crlf: options.crlf,
+            skip_on_null: !config.search_binary,
+            crlf: config.crlf,
         },
         &mut on_read_line,
     );
@@ -289,29 +294,29 @@ mod tests {
     }
 
     fn run_reader_multi(patterns: &[&str], input: &str) -> RecordingPrinter {
-        run_reader_with_options(
-            patterns,
-            input,
-            &Options {
-                invert_matches: false,
-                ..Default::default()
-            },
-        )
+        run_reader_with_options(patterns, input, &MatchConfig::default())
     }
 
+    /// `flags`'s own `patterns`/`globs` are ignored - only its bool
+    /// fields matter here, overridden below with the real compiled
+    /// `patterns` and an empty `globs`.
     fn run_reader_with_options(
         patterns: &[&str],
         input: &str,
-        options: &Options,
+        flags: &MatchConfig,
     ) -> RecordingPrinter {
         let patterns: Vec<Regex> = patterns.iter().map(|p| Regex::new(p).unwrap()).collect();
         let mut printer = RecordingPrinter::new();
         let mut emit = |_: String| {};
         let mut flushing_printer = FlushingPrinter::new(&mut printer, &mut emit);
+        let config = MatchConfig {
+            patterns: &patterns,
+            globs: &[],
+            ..*flags
+        };
         search_reader(
-            &patterns,
+            &config,
             "<test>",
-            options,
             Cursor::new(input.as_bytes()),
             &mut flushing_printer,
         )
@@ -339,11 +344,9 @@ mod tests {
         let printer = run_reader_with_options(
             &["foo"],
             "foo\r\nfoo\n",
-            &Options {
-                invert_matches: false,
-                search_binary: false,
+            &MatchConfig {
                 crlf: true,
-                search_archives: false,
+                ..Default::default()
             },
         );
         assert_eq!(printer.matches.len(), 2);
@@ -437,7 +440,7 @@ mod tests {
         let printer = run_reader_with_options(
             &["foo"],
             "foo\nbar\nfoo bar\nbaz\n",
-            &Options {
+            &MatchConfig {
                 invert_matches: true,
                 ..Default::default()
             },
@@ -451,7 +454,7 @@ mod tests {
         let printer = run_reader_with_options(
             &["foo", "bar"],
             "foo\nbar\nfoo bar\nbaz\n",
-            &Options {
+            &MatchConfig {
                 invert_matches: true,
                 ..Default::default()
             },
@@ -465,7 +468,7 @@ mod tests {
         let printer = run_reader_with_options(
             &["foo"],
             "bar\n",
-            &Options {
+            &MatchConfig {
                 invert_matches: true,
                 ..Default::default()
             },

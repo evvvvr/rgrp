@@ -1,36 +1,25 @@
-use crossbeam_queue::SegQueue;
-use regex::bytes::Regex;
+use crossbeam_deque::{Injector, Stealer, Worker};
 use std::collections::HashSet;
+use std::iter;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::Receiver;
-use std::sync::{Arc, Condvar, Mutex, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
 
-use crate::glob::GlobSpec;
 use crate::printer::{FlushingPrinter, Printer};
-use crate::search::{Error as SearchError, Options as SearchOptions, WorkQueue, search};
+use crate::search::{Error as SearchError, MatchConfig, WorkQueue, search};
 
-/// State every worker thread shares: the queue of paths still to
-/// process, and the bookkeeping that lets workers agree when there's
-/// nothing left to do.
+/// State shared across a whole run, regardless of which queueing
+/// strategy is actually walking paths with it - how work items flow
+/// between workers lives entirely in whatever implements [`WorkQueue`]
+/// ([`WorkerQueue`] for `spawn_workers`'s own work-stealing engine, or
+/// a test's own simple stand-in), never here.
 pub struct SharedWorkState {
-    /// Paths waiting to be searched. A directory expands into its
-    /// entries here instead of being recursed into directly, so
-    /// different workers can pick up different parts of the walk.
-    pub work_queue: SegQueue<PathBuf>,
     /// The paths given directly on the command line, exempt from
     /// `--glob`/`--iglob` - set once in `new` and never changed.
     seed_paths: HashSet<PathBuf>,
-    /// Paths popped but not yet finished - lets a worker that finds
-    /// the queue empty tell "we're done" from "someone's mid-directory
-    /// and about to push more work".
-    pending_work_counter: AtomicUsize,
-    /// Wakes workers waiting for new work or for everyone to finish.
-    condition: Condvar,
-    /// Paired with `condition`; holds no real data of its own.
-    condition_guard: Mutex<()>,
     /// Set once (by a Ctrl-C handler) to stop every worker from
     /// picking up new work - whatever's already in progress still
     /// runs to completion.
@@ -43,37 +32,117 @@ pub struct SharedWorkState {
 }
 
 impl SharedWorkState {
-    /// Seeds the work queue with the given paths.
-    pub fn new(work_items: &[PathBuf]) -> Self {
-        let work_queue = SegQueue::new();
-
-        for work_item in work_items {
-            work_queue.push(work_item.clone())
-        }
-
+    pub fn new(seed_paths: &[PathBuf]) -> Self {
         Self {
-            work_queue,
-            seed_paths: work_items.iter().cloned().collect(),
-            pending_work_counter: AtomicUsize::new(0),
-            condition: Condvar::new(),
-            condition_guard: Mutex::new(()),
+            seed_paths: seed_paths.iter().cloned().collect(),
             cancelled: AtomicBool::new(false),
             print_lock: Mutex::new(()),
         }
     }
+
+    pub fn is_seed_path(&self, path: &Path) -> bool {
+        self.seed_paths.contains(path)
+    }
 }
 
-impl WorkQueue for SharedWorkState {
+/// [`WorkQueue`] for `spawn_workers`'s own work-stealing engine, and
+/// the one place that knows `crossbeam_deque` exists at all - `search`
+/// only ever sees this behind the `WorkQueue` trait, so it has no idea
+/// whether it's driving a work-stealing pool or `tests/common::walk`'s
+/// single FIFO queue.
+///
+/// One of these belongs to exactly one worker thread (`local` is that
+/// thread's own deque, moved in rather than shared), but `global` and
+/// `stealers` are the same `Arc`s cloned into every worker, and
+/// `shared_state` is the one `seed_paths` set every worker reads
+/// without each keeping its own copy.
+struct WorkerQueue {
+    local: Worker<PathBuf>,
+    global: Arc<Injector<PathBuf>>,
+    /// Every worker's own stealer, including this one's - stealing
+    /// from yourself just never finds anything, since you'd have
+    /// already popped it out of `local` first.
+    stealers: Arc<Vec<Stealer<PathBuf>>>,
+    /// How many workers across the whole pool are currently mid-task
+    /// (popped, not yet finished). Shared by every worker's
+    /// `WorkerQueue`, not per-worker.
+    active_workers: Arc<AtomicUsize>,
+    shared_state: Arc<SharedWorkState>,
+}
+
+impl WorkerQueue {
+    /// One attempt at finding a task: this worker's own deque first,
+    /// then a batch stolen from the global queue, then a single task
+    /// from a peer - retrying while a steal reports "retry" (another
+    /// thief got there first) rather than treating that the same as
+    /// "genuinely nothing left".
+    fn steal_one(&self) -> Option<PathBuf> {
+        self.local.pop().or_else(|| {
+            iter::repeat_with(|| {
+                self.global
+                    .steal_batch_and_pop(&self.local)
+                    .or_else(|| self.stealers.iter().map(Stealer::steal).collect())
+            })
+            .find(|s| !s.is_retry())
+            .and_then(|s| s.success())
+        })
+    }
+
+    /// Blocks (by spinning) until either a task is available, the run
+    /// is cancelled, or every worker is confirmed idle with nothing
+    /// left anywhere - the only three ways this can return.
+    ///
+    /// A single failed `steal_one` never means "stop": another worker
+    /// might be mid-directory and about to push a batch of new
+    /// entries. Only safe to stop once `active_workers` reads `0` -
+    /// and even then, only after one more `steal_one`, not before:
+    /// whoever was last active is guaranteed to have pushed everything
+    /// it was going to *before* decrementing, so once this reads `0`,
+    /// every push that could still happen already has - that final
+    /// `steal_one` is what actually proves none of them left work
+    /// behind. Checking it in the other order (queue-then-active)
+    /// would leave a real gap where a push lands in between and never
+    /// gets seen by anyone.
+    fn find_next(&self) -> Option<PathBuf> {
+        loop {
+            if self.shared_state.cancelled.load(Ordering::Acquire) {
+                return None;
+            }
+
+            if let Some(path) = self.steal_one() {
+                return Some(path);
+            }
+
+            if self.active_workers.load(Ordering::Acquire) == 0 {
+                return self.steal_one();
+            }
+
+            thread::yield_now();
+        }
+    }
+
+    /// Marks one task as started; pairs with [`Self::task_done`],
+    /// bracketing the whole time a path is being searched (including
+    /// anything it pushes via `enqueue`) so [`Self::find_next`]'s
+    /// "everyone's idle" check stays accurate.
+    fn task_started(&self) {
+        self.active_workers.fetch_add(1, Ordering::AcqRel);
+    }
+
+    fn task_done(&self) {
+        self.active_workers.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+impl WorkQueue for WorkerQueue {
     fn enqueue(&self, paths: impl Iterator<Item = PathBuf>) {
         for path in paths {
-            self.work_queue.push(path);
+            self.local.push(path);
         }
-        // Wake workers waiting on the queue being empty.
-        self.condition.notify_all();
     }
 
     fn is_seed_path(&self, path: &Path) -> bool {
-        self.seed_paths.contains(path)
+        self.shared_state.is_seed_path(path)
     }
 }
 
@@ -142,15 +211,11 @@ impl WorkersHandle {
 /// Everything [`spawn_workers`] needs that isn't a closure, grouped to
 /// keep its parameter list short.
 pub(crate) struct SpawnOptions<'a> {
-    /// The compiled patterns to search for.
-    pub(crate) patterns: &'a [Regex],
-    /// Only paths matching at least one of these are searched; every
-    /// path is searched if this is empty.
-    pub(crate) globs: &'a [GlobSpec],
+    /// Patterns, globs, and behavior knobs - identical for every
+    /// worker, for the whole run.
+    pub(crate) config: MatchConfig<'a>,
     /// The starting paths given on the command line.
     pub(crate) files: &'a [PathBuf],
-    /// Search behavior that doesn't depend on the pattern or the path.
-    pub(crate) search_options: &'a SearchOptions,
     /// How many worker threads to use; `0` picks a number automatically.
     pub(crate) max_threads: usize,
 }
@@ -172,20 +237,12 @@ pub(crate) fn spawn_workers(
     // call `run()` in the same binary.
     let cancel_state = Arc::clone(&shared_state);
     let _ = ctrlc::set_handler(move || {
-        // Held across the swap and the notify: a worker's `wait_while`
-        // only re-checks its predicate while holding this same mutex,
-        // so taking it here stops a notify from firing in the gap
-        // between the worker reading `cancelled` and parking on the
-        // condvar, where it would otherwise be silently dropped.
-        let guard = cancel_state
-            .condition_guard
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
         // A second Ctrl-C while workers are still finishing means
-        // "stop now" - skip the graceful path entirely.
+        // "stop now" - skip the graceful path entirely. No condvar to
+        // hold here: workers never block waiting for a wakeup, they
+        // poll `cancelled` once per loop iteration, so a plain swap is
+        // enough for them to notice on their very next spin.
         let already_cancelled = cancel_state.cancelled.swap(true, Ordering::AcqRel);
-        cancel_state.condition.notify_all();
-        drop(guard);
 
         if already_cancelled {
             eprintln!("rgrp: second interrupt, exiting immediately");
@@ -201,51 +258,61 @@ pub(crate) fn spawn_workers(
         opts.max_threads
     };
 
+    // Seeds the global queue once; each worker's own local deque is
+    // what actually grows from there as directories get expanded.
+    let global_queue = Arc::new(Injector::new());
+    for file in opts.files {
+        global_queue.push(file.clone());
+    }
+
+    let local_queues: Vec<Worker<PathBuf>> = (0..thread_count).map(|_| Worker::new_fifo()).collect();
+    // Shared so every worker can try stealing from every other one.
+    let stealers: Arc<Vec<Stealer<PathBuf>>> =
+        Arc::new(local_queues.iter().map(Worker::stealer).collect());
+    let active_workers = Arc::new(AtomicUsize::new(0));
+
     let (output_tx, output_rx) = mpsc::channel::<Result<String, (SearchError, PathBuf)>>();
 
-    for _ in 0..thread_count {
-        let shared_state = Arc::clone(&shared_state);
+    for local_queue in local_queues {
+        let queue = WorkerQueue {
+            local: local_queue,
+            global: Arc::clone(&global_queue),
+            stealers: Arc::clone(&stealers),
+            active_workers: Arc::clone(&active_workers),
+            shared_state: Arc::clone(&shared_state),
+        };
         let make_printer = Arc::clone(&make_printer);
-        let patterns = opts.patterns.to_vec();
-        let globs = opts.globs.to_vec();
-        let search_options = *opts.search_options;
+        let patterns = opts.config.patterns.to_vec();
+        let globs = opts.config.globs.to_vec();
+        // The behavior knobs alone, pulled out by value so they (being
+        // plain `bool`s) can move into the 'static thread closure on
+        // their own - `opts.config` itself can't, since its `patterns`/
+        // `globs` fields still borrow from `opts`, which doesn't
+        // outlive this function.
+        let MatchConfig {
+            invert_matches,
+            search_binary,
+            crlf,
+            search_archives,
+            ..
+        } = opts.config;
         let output_tx = output_tx.clone();
 
         let thread = thread::spawn(move || {
-            loop {
-                let guard = shared_state.condition_guard.lock().unwrap();
-                let guard = shared_state
-                    .condition
-                    .wait_while(guard, |_| {
-                        !shared_state.cancelled.load(Ordering::Acquire)
-                            && shared_state.work_queue.is_empty()
-                            && shared_state.pending_work_counter.load(Ordering::Acquire) > 0
-                    })
-                    .unwrap();
+            // Built once per thread, not once per path - none of
+            // these fields ever change across the whole run.
+            let config = MatchConfig {
+                patterns: &patterns,
+                globs: &globs,
+                invert_matches,
+                search_binary,
+                crlf,
+                search_archives,
+            };
 
-                if shared_state.cancelled.load(Ordering::Acquire) {
-                    drop(guard);
-                    break;
-                }
+            while let Some(path) = queue.find_next() {
+                queue.task_started();
 
-                let Some(path) = shared_state.work_queue.pop() else {
-                    // Lost the race for the last item; nothing left if
-                    // no one else is still in flight either.
-                    if shared_state.pending_work_counter.load(Ordering::Acquire) == 0 {
-                        break;
-                    }
-                    drop(guard);
-                    continue;
-                };
-                shared_state
-                    .pending_work_counter
-                    .fetch_add(1, Ordering::AcqRel);
-                drop(guard);
-
-                // Caught rather than left to unwind: an uncaught panic
-                // here would skip the pending_work_counter decrement
-                // below, wedging every other worker's `wait_while`
-                // forever even after all other work finished.
                 let search_result = panic::catch_unwind(AssertUnwindSafe(|| {
                     let mut printer = make_printer();
                     // Acquired on this path's first chunk and held
@@ -263,7 +330,8 @@ pub(crate) fn spawn_workers(
                             // into every other worker's lock attempt
                             // panicking too.
                             print_guard = Some(
-                                shared_state
+                                queue
+                                    .shared_state
                                     .print_lock
                                     .lock()
                                     .unwrap_or_else(std::sync::PoisonError::into_inner),
@@ -273,14 +341,7 @@ pub(crate) fn spawn_workers(
                     };
                     let mut flushing_printer = FlushingPrinter::new(&mut *printer, &mut emit);
 
-                    search(
-                        &patterns,
-                        &globs,
-                        &path,
-                        &search_options,
-                        &mut flushing_printer,
-                        &*shared_state,
-                    )
+                    search(&config, &path, &mut flushing_printer, &queue)
                 }));
 
                 // On success, output was already sent to `emit` as
@@ -293,15 +354,12 @@ pub(crate) fn spawn_workers(
                     }
                     Err(panic_payload) => {
                         let message = panic_message(&panic_payload);
-                        let _ = output_tx
-                            .send(Result::Err((SearchError::WorkerPanicked(message), path)));
+                        let _ =
+                            output_tx.send(Result::Err((SearchError::WorkerPanicked(message), path)));
                     }
                 }
 
-                shared_state
-                    .pending_work_counter
-                    .fetch_sub(1, Ordering::AcqRel);
-                shared_state.condition.notify_all();
+                queue.task_done();
             }
         });
         threads.push(thread);

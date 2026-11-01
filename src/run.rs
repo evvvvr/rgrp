@@ -6,6 +6,7 @@ use crate::{
     glob::GlobSpec,
     printer::Printer,
     search,
+    search::MatchConfig,
 };
 
 /// Entire program run error.
@@ -79,7 +80,9 @@ pub fn run<P: Printer + 'static>(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    let search_options = search::Options {
+    let config = MatchConfig {
+        patterns: &patterns,
+        globs: &options.globs,
         invert_matches: options.invert_matches,
         search_binary: options.search_binary,
         crlf: options.crlf,
@@ -88,10 +91,8 @@ pub fn run<P: Printer + 'static>(
 
     let outcome = spawn_workers(
         SpawnOptions {
-            patterns: &patterns,
-            globs: &options.globs,
+            config,
             files: &options.files,
-            search_options: &search_options,
             max_threads: options.max_threads as usize,
         },
         move || -> Box<dyn Printer> { Box::new(make_printer()) },

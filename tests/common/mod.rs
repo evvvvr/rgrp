@@ -1,11 +1,9 @@
-use std::path::Path;
+use std::collections::{HashSet, VecDeque};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use regex::bytes::Regex;
-use rgrp::concurrency::SharedWorkState;
-use rgrp::glob::GlobSpec;
 use rgrp::printer::{FlushingPrinter, Printer};
-use rgrp::search::{self, search};
+use rgrp::search::{self, MatchConfig, WorkQueue, search};
 
 #[derive(Clone)]
 #[allow(dead_code)] // fields are read by some test binaries but not others
@@ -74,29 +72,52 @@ impl Printer for RecordingPrinter {
     }
 }
 
+/// A dead-simple [`WorkQueue`]: a plain FIFO drained by hand, single
+/// threaded, with no stealing or cancellation - for tests that want to
+/// walk a tree deterministically without spinning up the real
+/// work-stealing thread pool (`concurrency::spawn_workers`) at all.
+struct SequentialQueue {
+    queue: Mutex<VecDeque<PathBuf>>,
+    seed_paths: HashSet<PathBuf>,
+}
+
+impl SequentialQueue {
+    fn new(seed_paths: &[PathBuf]) -> Self {
+        Self {
+            queue: Mutex::new(seed_paths.iter().cloned().collect()),
+            seed_paths: seed_paths.iter().cloned().collect(),
+        }
+    }
+
+    fn pop(&self) -> Option<PathBuf> {
+        self.queue.lock().unwrap().pop_front()
+    }
+}
+
+impl WorkQueue for SequentialQueue {
+    fn enqueue(&self, paths: impl Iterator<Item = PathBuf>) {
+        self.queue.lock().unwrap().extend(paths);
+    }
+
+    fn is_seed_path(&self, path: &Path) -> bool {
+        self.seed_paths.contains(path)
+    }
+}
+
 /// `search` only expands one level of a directory and returns; draining
 /// the queue single-threaded is what walks the whole tree.
 #[allow(dead_code)] // used by some test binaries but not others
 pub fn walk(
-    patterns: &[Regex],
-    globs: &[GlobSpec],
+    config: &MatchConfig,
     root: &Path,
-    options: &search::Options,
     mut make_printer: impl FnMut() -> RecordingPrinter,
 ) -> Result<(), search::Error> {
-    let shared_state = SharedWorkState::new(&[root.to_path_buf()]);
-    while let Some(path) = shared_state.work_queue.pop() {
+    let queue = SequentialQueue::new(&[root.to_path_buf()]);
+    while let Some(path) = queue.pop() {
         let mut printer = make_printer();
         let mut emit = |_: String| {};
         let mut flushing_printer = FlushingPrinter::new(&mut printer, &mut emit);
-        search(
-            patterns,
-            globs,
-            &path,
-            options,
-            &mut flushing_printer,
-            &shared_state,
-        )?;
+        search(config, &path, &mut flushing_printer, &queue)?;
     }
     Ok(())
 }

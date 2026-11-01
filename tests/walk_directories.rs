@@ -5,6 +5,7 @@ use std::fs;
 use common::{SharedRecorder, walk};
 use regex::bytes::Regex;
 use rgrp::search;
+use rgrp::search::MatchConfig;
 use tempfile::tempdir;
 
 #[test]
@@ -17,13 +18,11 @@ fn finds_matches_in_every_file_of_a_flat_directory() {
     let recorder = SharedRecorder::new();
     let re = Regex::new("hello").unwrap();
     walk(
-        &[re],
-        &[],
-        dir.path(),
-        &search::Options {
-            invert_matches: false,
+        &MatchConfig {
+            patterns: &[re],
             ..Default::default()
         },
+        dir.path(),
         &mut || recorder.printer(),
     )
     .unwrap();
@@ -44,13 +43,11 @@ fn recurses_into_nested_subdirectories() {
     let recorder = SharedRecorder::new();
     let re = Regex::new("needle").unwrap();
     walk(
-        &[re],
-        &[],
-        dir.path(),
-        &search::Options {
-            invert_matches: false,
+        &MatchConfig {
+            patterns: &[re],
             ..Default::default()
         },
+        dir.path(),
         &mut || recorder.printer(),
     )
     .unwrap();
@@ -65,13 +62,11 @@ fn empty_directory_produces_no_matches_and_no_error() {
     let recorder = SharedRecorder::new();
     let re = Regex::new("anything").unwrap();
     walk(
-        &[re],
-        &[],
-        dir.path(),
-        &search::Options {
-            invert_matches: false,
+        &MatchConfig {
+            patterns: &[re],
             ..Default::default()
         },
+        dir.path(),
         &mut || recorder.printer(),
     )
     .unwrap();
@@ -89,13 +84,11 @@ fn single_file_path_is_searched_directly() {
     let recorder = SharedRecorder::new();
     let re = Regex::new("needle").unwrap();
     walk(
-        &[re],
-        &[],
-        &file,
-        &search::Options {
-            invert_matches: false,
+        &MatchConfig {
+            patterns: &[re],
             ..Default::default()
         },
+        &file,
         &mut || recorder.printer(),
     )
     .unwrap();
@@ -111,13 +104,11 @@ fn nonexistent_path_returns_io_error() {
     let recorder = SharedRecorder::new();
     let re = Regex::new("x").unwrap();
     let result = walk(
-        &[re],
-        &[],
-        &missing,
-        &search::Options {
-            invert_matches: false,
+        &MatchConfig {
+            patterns: &[re],
             ..Default::default()
         },
+        &missing,
         &mut || recorder.printer(),
     );
 
@@ -136,13 +127,11 @@ fn symlinks_are_skipped_rather_than_followed() {
     let recorder = SharedRecorder::new();
     let re = Regex::new("needle").unwrap();
     walk(
-        &[re],
-        &[],
-        dir.path(),
-        &search::Options {
-            invert_matches: false,
+        &MatchConfig {
+            patterns: &[re],
             ..Default::default()
         },
+        dir.path(),
         &mut || recorder.printer(),
     )
     .unwrap();
@@ -167,13 +156,11 @@ fn non_utf8_path_is_searched_like_any_other_file() {
     let recorder = SharedRecorder::new();
     let re = Regex::new("needle").unwrap();
     walk(
-        &[re],
-        &[],
-        dir.path(),
-        &search::Options {
-            invert_matches: false,
+        &MatchConfig {
+            patterns: &[re],
             ..Default::default()
         },
+        dir.path(),
         &mut || recorder.printer(),
     )
     .unwrap();
@@ -197,13 +184,12 @@ fn a_glob_filters_which_files_get_searched() {
     let re = Regex::new("needle").unwrap();
     let globs = [rgrp::glob::compile("*.rs", false).unwrap()];
     walk(
-        &[re],
-        &globs,
-        dir.path(),
-        &search::Options {
-            invert_matches: false,
+        &MatchConfig {
+            patterns: &[re],
+            globs: &globs,
             ..Default::default()
         },
+        dir.path(),
         &mut || recorder.printer(),
     )
     .unwrap();
@@ -226,13 +212,12 @@ fn a_negated_glob_prunes_the_whole_directory_it_matches() {
     let re = Regex::new("needle").unwrap();
     let globs = [rgrp::glob::compile("!excluded", false).unwrap()];
     walk(
-        &[re],
-        &globs,
-        dir.path(),
-        &search::Options {
-            invert_matches: false,
+        &MatchConfig {
+            patterns: &[re],
+            globs: &globs,
             ..Default::default()
         },
+        dir.path(),
         &mut || recorder.printer(),
     )
     .unwrap();

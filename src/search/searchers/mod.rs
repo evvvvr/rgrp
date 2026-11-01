@@ -3,12 +3,10 @@ use std::io;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use regex::bytes::Regex;
-
 use crate::printer::FlushingPrinter;
 
 use super::classify::CompressionFormat;
-use super::{Error, Options, SearchResult, search_reader};
+use super::{Error, MatchConfig, SearchResult, search_reader};
 
 mod tar;
 mod zip;
@@ -51,9 +49,8 @@ fn check_exit_status(
 /// rather than a compressed tarball - `classify` sends those to
 /// `search_tarball` instead.
 pub(super) fn search_compressed(
-    patterns: &[Regex],
+    config: &MatchConfig,
     path: &Path,
-    options: &Options,
     printer: &mut FlushingPrinter<'_>,
     format: CompressionFormat,
 ) -> SearchResult {
@@ -71,13 +68,7 @@ pub(super) fn search_compressed(
         .take()
         .expect("just configured with Stdio::piped()");
 
-    let res = search_reader(
-        patterns,
-        &path.to_string_lossy(),
-        options,
-        child_output,
-        printer,
-    );
+    let res = search_reader(config, &path.to_string_lossy(), child_output, printer);
 
     // `res`'s own error takes priority over a mere wait() failure,
     // same reasoning as `search_tarball` - checked only once `res` is
@@ -92,11 +83,10 @@ pub(super) fn search_compressed(
 }
 
 pub(super) fn search_plain(
-    patterns: &[Regex],
+    config: &MatchConfig,
     path: &Path,
-    options: &Options,
     printer: &mut FlushingPrinter<'_>,
 ) -> SearchResult {
     let file = fs::File::open(path)?;
-    search_reader(patterns, &path.to_string_lossy(), options, file, printer)
+    search_reader(config, &path.to_string_lossy(), file, printer)
 }

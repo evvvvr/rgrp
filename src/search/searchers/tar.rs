@@ -2,12 +2,10 @@ use std::io::{self, Read};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use regex::bytes::Regex;
-
-use crate::glob::{self, GlobSpec};
+use crate::glob;
 use crate::printer::FlushingPrinter;
 
-use super::super::{Error, Options, Outcome, SearchResult, search_reader};
+use super::super::{Error, MatchConfig, Outcome, SearchResult, search_reader};
 use super::{ArchiveEntry, check_exit_status};
 
 /// Parses one line of `tar -tvf`'s verbose listing. Column layout
@@ -85,10 +83,8 @@ fn list_tarball_entries(path: &Path) -> Result<Vec<ArchiveEntry>, Error> {
 /// moving to the next. Extracting each member with its own `tar` call
 /// instead would re-decompress the archive from the start every time.
 pub(in crate::search) fn search_tarball(
-    patterns: &[Regex],
-    globs: &[GlobSpec],
+    config: &MatchConfig,
     path: &Path,
-    options: &Options,
     printer: &mut FlushingPrinter<'_>,
 ) -> SearchResult {
     let entries = list_tarball_entries(path)?;
@@ -126,14 +122,10 @@ pub(in crate::search) fn search_tarball(
         // skipped member's bytes still have to be drained below
         // either way, since `tar` streams every member through this
         // one shared pipe regardless of what gets matched.
-        let res = if globs.is_empty() || glob::is_file_included(Path::new(&entry.name), globs) {
-            search_reader(
-                patterns,
-                &archive_prefixed_file_path,
-                options,
-                &mut member_reader,
-                printer,
-            )
+        let res = if config.globs.is_empty()
+            || glob::is_file_included(Path::new(&entry.name), config.globs)
+        {
+            search_reader(config, &archive_prefixed_file_path, &mut member_reader, printer)
         } else {
             Ok(Outcome::Ignored)
         };
