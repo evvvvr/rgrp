@@ -5,7 +5,7 @@ use std::fs;
 use common::{SharedRecorder, walk};
 use regex::bytes::Regex;
 use rgrp::search;
-use rgrp::search::MatchConfig;
+use rgrp::search::SearchConfig;
 use tempfile::tempdir;
 
 #[test]
@@ -18,7 +18,7 @@ fn finds_matches_in_every_file_of_a_flat_directory() {
     let recorder = SharedRecorder::new();
     let re = Regex::new("hello").unwrap();
     walk(
-        &MatchConfig {
+        &SearchConfig {
             patterns: &[re],
             ..Default::default()
         },
@@ -43,7 +43,7 @@ fn recurses_into_nested_subdirectories() {
     let recorder = SharedRecorder::new();
     let re = Regex::new("needle").unwrap();
     walk(
-        &MatchConfig {
+        &SearchConfig {
             patterns: &[re],
             ..Default::default()
         },
@@ -62,7 +62,7 @@ fn empty_directory_produces_no_matches_and_no_error() {
     let recorder = SharedRecorder::new();
     let re = Regex::new("anything").unwrap();
     walk(
-        &MatchConfig {
+        &SearchConfig {
             patterns: &[re],
             ..Default::default()
         },
@@ -84,7 +84,7 @@ fn single_file_path_is_searched_directly() {
     let recorder = SharedRecorder::new();
     let re = Regex::new("needle").unwrap();
     walk(
-        &MatchConfig {
+        &SearchConfig {
             patterns: &[re],
             ..Default::default()
         },
@@ -104,7 +104,7 @@ fn nonexistent_path_returns_io_error() {
     let recorder = SharedRecorder::new();
     let re = Regex::new("x").unwrap();
     let result = walk(
-        &MatchConfig {
+        &SearchConfig {
             patterns: &[re],
             ..Default::default()
         },
@@ -127,7 +127,7 @@ fn symlinks_are_skipped_rather_than_followed() {
     let recorder = SharedRecorder::new();
     let re = Regex::new("needle").unwrap();
     walk(
-        &MatchConfig {
+        &SearchConfig {
             patterns: &[re],
             ..Default::default()
         },
@@ -156,7 +156,7 @@ fn non_utf8_path_is_searched_like_any_other_file() {
     let recorder = SharedRecorder::new();
     let re = Regex::new("needle").unwrap();
     walk(
-        &MatchConfig {
+        &SearchConfig {
             patterns: &[re],
             ..Default::default()
         },
@@ -184,7 +184,7 @@ fn a_glob_filters_which_files_get_searched() {
     let re = Regex::new("needle").unwrap();
     let globs = [rgrp::glob::compile("*.rs", false).unwrap()];
     walk(
-        &MatchConfig {
+        &SearchConfig {
             patterns: &[re],
             globs: &globs,
             ..Default::default()
@@ -212,7 +212,7 @@ fn a_negated_glob_prunes_the_whole_directory_it_matches() {
     let re = Regex::new("needle").unwrap();
     let globs = [rgrp::glob::compile("!excluded", false).unwrap()];
     walk(
-        &MatchConfig {
+        &SearchConfig {
             patterns: &[re],
             globs: &globs,
             ..Default::default()

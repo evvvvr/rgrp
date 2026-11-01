@@ -5,7 +5,7 @@ use std::process::{Command, Stdio};
 use crate::glob;
 use crate::printer::FlushingPrinter;
 
-use super::super::{Error, MatchConfig, Outcome, SearchResult, search_reader};
+use super::super::{Error, Outcome, SearchConfig, SearchResult, search_reader};
 use super::{ArchiveEntry, check_exit_status};
 
 /// Parses one line of `tar -tvf`'s verbose listing. Column layout
@@ -83,7 +83,7 @@ fn list_tarball_entries(path: &Path) -> Result<Vec<ArchiveEntry>, Error> {
 /// moving to the next. Extracting each member with its own `tar` call
 /// instead would re-decompress the archive from the start every time.
 pub(in crate::search) fn search_tarball(
-    config: &MatchConfig,
+    config: &SearchConfig,
     path: &Path,
     printer: &mut FlushingPrinter<'_>,
 ) -> SearchResult {
@@ -125,7 +125,12 @@ pub(in crate::search) fn search_tarball(
         let res = if config.globs.is_empty()
             || glob::is_file_included(Path::new(&entry.name), config.globs)
         {
-            search_reader(config, &archive_prefixed_file_path, &mut member_reader, printer)
+            search_reader(
+                config,
+                &archive_prefixed_file_path,
+                &mut member_reader,
+                printer,
+            )
         } else {
             Ok(Outcome::Ignored)
         };

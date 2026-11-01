@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use rgrp::printer::{FlushingPrinter, Printer};
-use rgrp::search::{self, MatchConfig, WorkQueue, search};
+use rgrp::search::{self, SearchConfig, WorkQueue, search};
 
 #[derive(Clone)]
 #[allow(dead_code)] // fields are read by some test binaries but not others
@@ -108,7 +108,7 @@ impl WorkQueue for SequentialQueue {
 /// the queue single-threaded is what walks the whole tree.
 #[allow(dead_code)] // used by some test binaries but not others
 pub fn walk(
-    config: &MatchConfig,
+    config: &SearchConfig,
     root: &Path,
     mut make_printer: impl FnMut() -> RecordingPrinter,
 ) -> Result<(), search::Error> {
