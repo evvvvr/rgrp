@@ -4,6 +4,7 @@ use std::process::{Command, Stdio};
 
 use regex::bytes::Regex;
 
+use crate::glob::{self, GlobSpec};
 use crate::printer::FlushingPrinter;
 
 use super::super::{Error, Options, Outcome, SearchResult, search_reader};
@@ -85,6 +86,7 @@ fn list_tarball_entries(path: &Path) -> Result<Vec<ArchiveEntry>, Error> {
 /// instead would re-decompress the archive from the start every time.
 pub(in crate::search) fn search_tarball(
     patterns: &[Regex],
+    globs: &[GlobSpec],
     path: &Path,
     options: &Options,
     printer: &mut FlushingPrinter<'_>,
@@ -98,7 +100,10 @@ pub(in crate::search) fn search_tarball(
         .stdout(Stdio::piped())
         .spawn()?;
 
-    let mut child_output = cmd.stdout.take().expect("just configured with Stdio::piped()");
+    let mut child_output = cmd
+        .stdout
+        .take()
+        .expect("just configured with Stdio::piped()");
     // Kept rather than discarded for a generic placeholder, so the
     // caller learns what actually went wrong.
     let mut first_error: Option<Error> = None;
@@ -115,13 +120,23 @@ pub(in crate::search) fn search_tarball(
         // reads into the next member's content.
         let mut member_reader = (&mut child_output).take(entry.size);
 
-        let res = search_reader(
-            patterns,
-            &archive_prefixed_file_path,
-            options,
-            &mut member_reader,
-            printer,
-        );
+        // Matched against the member's own name, not the archive's
+        // path prefix - `--glob '*.rs'` should mean the same thing
+        // whether a `.rs` file lives on disk or inside a tarball. A
+        // skipped member's bytes still have to be drained below
+        // either way, since `tar` streams every member through this
+        // one shared pipe regardless of what gets matched.
+        let res = if globs.is_empty() || glob::is_file_included(Path::new(&entry.name), globs) {
+            search_reader(
+                patterns,
+                &archive_prefixed_file_path,
+                options,
+                &mut member_reader,
+                printer,
+            )
+        } else {
+            Ok(Outcome::Ignored)
+        };
 
         // `search_reader` may have stopped early (e.g. a binary
         // member), leaving bytes unread - drain them so the next
@@ -177,18 +192,20 @@ mod tests {
 
     #[test]
     fn bsdtar_parses_a_regular_file_line() {
-        let entry =
-            parse_verbose_tar_line("-rw-r--r--  0 voga   staff  786671 Aug 27  2025 node_modules/.package-lock.json")
-                .unwrap();
+        let entry = parse_verbose_tar_line(
+            "-rw-r--r--  0 voga   staff  786671 Aug 27  2025 node_modules/.package-lock.json",
+        )
+        .unwrap();
         assert_eq!(entry.name, "node_modules/.package-lock.json");
         assert_eq!(entry.size, 786671);
     }
 
     #[test]
     fn bsdtar_parses_a_file_name_with_spaces() {
-        let entry =
-            parse_verbose_tar_line("-rw-r--r--  0 voga   staff     123 Aug 27  2025 some dir/a file.txt")
-                .unwrap();
+        let entry = parse_verbose_tar_line(
+            "-rw-r--r--  0 voga   staff     123 Aug 27  2025 some dir/a file.txt",
+        )
+        .unwrap();
         assert_eq!(entry.name, "some dir/a file.txt");
         assert_eq!(entry.size, 123);
     }

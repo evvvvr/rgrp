@@ -1,32 +1,11 @@
 mod common;
 
 use std::fs;
-use std::path::Path;
 
-use common::SharedRecorder;
+use common::{SharedRecorder, walk};
 use regex::bytes::Regex;
-use rgrp::concurrency::SharedWorkState;
-use rgrp::printer::FlushingPrinter;
-use rgrp::search::{self, search};
+use rgrp::search;
 use tempfile::tempdir;
-
-// `search` only expands one level of a directory and returns; draining
-// the queue single-threaded is what walks the whole tree.
-fn walk(
-    patterns: &[Regex],
-    root: &Path,
-    options: &search::Options,
-    mut make_printer: impl FnMut() -> common::RecordingPrinter,
-) -> Result<(), search::Error> {
-    let shared_state = SharedWorkState::new(&[root.to_path_buf()]);
-    while let Some(path) = shared_state.work_queue.pop() {
-        let mut printer = make_printer();
-        let mut emit = |_: String| {};
-        let mut flushing_printer = FlushingPrinter::new(&mut printer, &mut emit);
-        search(patterns, &path, options, &mut flushing_printer, &shared_state)?;
-    }
-    Ok(())
-}
 
 #[test]
 fn finds_matches_in_every_file_of_a_flat_directory() {
@@ -39,6 +18,7 @@ fn finds_matches_in_every_file_of_a_flat_directory() {
     let re = Regex::new("hello").unwrap();
     walk(
         &[re],
+        &[],
         dir.path(),
         &search::Options {
             invert_matches: false,
@@ -65,6 +45,7 @@ fn recurses_into_nested_subdirectories() {
     let re = Regex::new("needle").unwrap();
     walk(
         &[re],
+        &[],
         dir.path(),
         &search::Options {
             invert_matches: false,
@@ -85,6 +66,7 @@ fn empty_directory_produces_no_matches_and_no_error() {
     let re = Regex::new("anything").unwrap();
     walk(
         &[re],
+        &[],
         dir.path(),
         &search::Options {
             invert_matches: false,
@@ -108,6 +90,7 @@ fn single_file_path_is_searched_directly() {
     let re = Regex::new("needle").unwrap();
     walk(
         &[re],
+        &[],
         &file,
         &search::Options {
             invert_matches: false,
@@ -129,6 +112,7 @@ fn nonexistent_path_returns_io_error() {
     let re = Regex::new("x").unwrap();
     let result = walk(
         &[re],
+        &[],
         &missing,
         &search::Options {
             invert_matches: false,
@@ -153,6 +137,7 @@ fn symlinks_are_skipped_rather_than_followed() {
     let re = Regex::new("needle").unwrap();
     walk(
         &[re],
+        &[],
         dir.path(),
         &search::Options {
             invert_matches: false,
@@ -183,6 +168,7 @@ fn non_utf8_path_is_searched_like_any_other_file() {
     let re = Regex::new("needle").unwrap();
     walk(
         &[re],
+        &[],
         dir.path(),
         &search::Options {
             invert_matches: false,
@@ -196,4 +182,60 @@ fn non_utf8_path_is_searched_like_any_other_file() {
     // are found and searched - only display formatting is lossy, not the
     // walk itself.
     assert_eq!(recorder.matches().len(), 2);
+}
+
+#[test]
+fn a_glob_filters_which_files_get_searched() {
+    let dir = tempdir().unwrap();
+    let nested = dir.path().join("src");
+    fs::create_dir_all(&nested).unwrap();
+    fs::write(dir.path().join("main.rs"), "needle one\n").unwrap();
+    fs::write(nested.join("lib.rs"), "needle two\n").unwrap();
+    fs::write(dir.path().join("notes.txt"), "needle three\n").unwrap();
+
+    let recorder = SharedRecorder::new();
+    let re = Regex::new("needle").unwrap();
+    let globs = [rgrp::glob::compile("*.rs", false).unwrap()];
+    walk(
+        &[re],
+        &globs,
+        dir.path(),
+        &search::Options {
+            invert_matches: false,
+            ..Default::default()
+        },
+        &mut || recorder.printer(),
+    )
+    .unwrap();
+
+    // Both .rs files, at any depth, but not notes.txt.
+    assert_eq!(recorder.matches().len(), 2);
+}
+
+#[test]
+fn a_negated_glob_prunes_the_whole_directory_it_matches() {
+    let dir = tempdir().unwrap();
+    let excluded = dir.path().join("excluded");
+    fs::create_dir_all(&excluded).unwrap();
+    fs::write(dir.path().join("top.txt"), "needle at top\n").unwrap();
+    // This would match the search pattern just fine - it's only
+    // unreachable because its parent directory gets pruned.
+    fs::write(excluded.join("deep.txt"), "needle deep inside\n").unwrap();
+
+    let recorder = SharedRecorder::new();
+    let re = Regex::new("needle").unwrap();
+    let globs = [rgrp::glob::compile("!excluded", false).unwrap()];
+    walk(
+        &[re],
+        &globs,
+        dir.path(),
+        &search::Options {
+            invert_matches: false,
+            ..Default::default()
+        },
+        &mut || recorder.printer(),
+    )
+    .unwrap();
+
+    assert_eq!(recorder.matches().len(), 1);
 }

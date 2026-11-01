@@ -60,7 +60,13 @@ impl<'a> FlushingPrinter<'a> {
 
     /// Renders and buffers one matched line, sending the buffer on early
     /// if that pushes it past the size threshold.
-    pub fn print_line(&mut self, file_path: &str, line_no: u64, line: &[u8], matches: &[(usize, usize)]) {
+    pub(crate) fn print_line(
+        &mut self,
+        file_path: &str,
+        line_no: u64,
+        line: &[u8],
+        matches: &[(usize, usize)],
+    ) {
         let rendered = self.printer.render_line(file_path, line_no, line, matches);
         self.buffer.push_str(&rendered);
 
@@ -77,7 +83,7 @@ impl<'a> FlushingPrinter<'a> {
     /// nothing had already been sent for it, discards what's buffered;
     /// otherwise flushes and emits the rest, since output already sent
     /// can't be retracted anyway.
-    pub fn finish(&mut self, is_binary: bool) {
+    pub(crate) fn finish(&mut self, is_binary: bool) {
         if is_binary && !self.already_emitted {
             self.buffer.clear();
         } else {
@@ -94,7 +100,7 @@ impl<'a> FlushingPrinter<'a> {
     /// Unconditionally discards whatever's buffered, for a genuine
     /// read error where there's no "finish with the rest" to fall
     /// back to.
-    pub fn discard(&mut self) {
+    pub(crate) fn discard(&mut self) {
         self.buffer.clear();
         self.already_emitted = false;
         self.printer.reset();

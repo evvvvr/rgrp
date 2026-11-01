@@ -9,7 +9,6 @@ AI is used to find and fix bugs (especially concurrency/mem usage related); gene
 
 ## To Do:
 - follow symlinks (avoid infinite loops)
-- ignoring/specifying search paths/file patterns 
 - multiline matches
 - file read optimization with mmap
 
@@ -72,6 +71,12 @@ format you actually search need to be installed.
 
 - `-z, --search-archives`
   Search inside zip/tar archives and gzip/bzip2/xz/zstd/etc-compressed files, instead of reading them as opaque binary data (the default, under which they're typically skipped as binary - mirrors ripgrep's `-z`/`--search-zip`). Requires the corresponding external tool (`tar`, `unzip`, `gzip`, `bzip2`, `xz`, `zstd`, `lzip`, `lzma`, `lzop`, `uncompress`) to be installed for whichever archive/compression format is encountered.
+
+- `-g, --glob <GLOB>`
+  Only search paths matching this glob (gitignore-style syntax, not a regex). May be given multiple times; a leading `!` excludes instead of includes. If every `--glob`/`--iglob` given is a `!`-exclusion, everything else is still searched by default and the exclusions just carve out exceptions; the moment any one of them is a plain (non-negated) pattern, only paths matching *some* glob are searched at all. When several given globs match the same path, whichever one comes later on the command line wins. A pattern with no `/` matches at any depth (`*.rs` finds `src/nested/deep.rs`, not just top-level `.rs` files); a pattern with a `/` is left anchored exactly as written. A directory matching a `!`-exclusion is pruned outright - nothing under it is walked, regardless of what any other glob says - but a directory is never required to match a *positive* glob to be walked into in the first place. With `-z`, the same globs are also matched against each archive member's own name (not the archive file's own path) - though a skipped member's bytes still have to be read off the shared decompression stream either way, so `-z -g` saves matching/printing work for excluded members, not extraction time. Paths given explicitly on the command line are always searched regardless of `--glob`/`--iglob`, same as ripgrep's own documented behavior.
+
+- `--iglob <GLOB>`
+  Same as `--glob`, but matched case-insensitively.
 
 
 # How it works

@@ -41,13 +41,10 @@ fn check_exit_status(
     // `is_some_and` rather than `status.code() == tolerable_warning_code`:
     // a signal-terminated process's code is `None`, which must never
     // match a `None` "no warning code applies" either.
-    if status.success() || tolerable_warning_code.is_some_and(|code| status.code() == Some(code))
-    {
+    if status.success() || tolerable_warning_code.is_some_and(|code| status.code() == Some(code)) {
         return Ok(());
     }
-    Err(Error::Io(io::Error::other(format!(
-        "`{program}` {status}"
-    ))))
+    Err(Error::Io(io::Error::other(format!("`{program}` {status}"))))
 }
 
 /// A single compressed file (`access.log.gz`, `notes.txt.bz2`, ...)
@@ -69,7 +66,10 @@ pub(super) fn search_compressed(
         .stdout(Stdio::piped())
         .spawn()?;
 
-    let child_output = cmd.stdout.take().expect("just configured with Stdio::piped()");
+    let child_output = cmd
+        .stdout
+        .take()
+        .expect("just configured with Stdio::piped()");
 
     let res = search_reader(
         patterns,

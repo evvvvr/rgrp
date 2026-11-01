@@ -4,6 +4,7 @@ use std::process::{Command, Stdio};
 
 use regex::bytes::Regex;
 
+use crate::glob::{self, GlobSpec};
 use crate::printer::FlushingPrinter;
 
 use super::super::{Error, Options, Outcome, SearchResult, search_reader};
@@ -90,6 +91,7 @@ fn list_zip_entries(path: &Path) -> Result<Vec<ArchiveEntry>, Error> {
 /// to the next.
 pub(in crate::search) fn search_zip(
     patterns: &[Regex],
+    globs: &[GlobSpec],
     path: &Path,
     options: &Options,
     printer: &mut FlushingPrinter<'_>,
@@ -103,7 +105,10 @@ pub(in crate::search) fn search_zip(
         .stdout(Stdio::piped())
         .spawn()?;
 
-    let mut child_output = cmd.stdout.take().expect("just configured with Stdio::piped()");
+    let mut child_output = cmd
+        .stdout
+        .take()
+        .expect("just configured with Stdio::piped()");
     let mut first_error: Option<Error> = None;
     let archive_path = path.to_string_lossy();
 
@@ -115,13 +120,20 @@ pub(in crate::search) fn search_zip(
         let archive_prefixed_file_path = format!("{archive_path}:{}", entry.name);
         let mut member_reader = (&mut child_output).take(entry.size);
 
-        let res = search_reader(
-            patterns,
-            &archive_prefixed_file_path,
-            options,
-            &mut member_reader,
-            printer,
-        );
+        // Same reasoning as `search_tarball`'s own glob check (in
+        // `tar.rs`): matched against the member's own name, and a
+        // skipped member's bytes still have to be drained below.
+        let res = if globs.is_empty() || glob::is_file_included(Path::new(&entry.name), globs) {
+            search_reader(
+                patterns,
+                &archive_prefixed_file_path,
+                options,
+                &mut member_reader,
+                printer,
+            )
+        } else {
+            Ok(Outcome::Ignored)
+        };
 
         if let Err(drain_err) = io::copy(&mut member_reader, &mut io::sink()) {
             first_error.get_or_insert(Error::from(drain_err));
@@ -168,9 +180,10 @@ mod tests {
 
     #[test]
     fn parses_a_stored_regular_file_line() {
-        let entry =
-            parse_verbose_zip_line("      18  Stored       18   0% 10-29-2026 09:32 b8c5e2e7  sub/a.txt")
-                .unwrap();
+        let entry = parse_verbose_zip_line(
+            "      18  Stored       18   0% 10-29-2026 09:32 b8c5e2e7  sub/a.txt",
+        )
+        .unwrap();
         assert_eq!(entry.name, "sub/a.txt");
         assert_eq!(entry.size, 18);
     }
@@ -197,9 +210,10 @@ mod tests {
 
     #[test]
     fn directory_entry_has_zero_length() {
-        let entry =
-            parse_verbose_zip_line("       0  Stored        0   0% 10-29-2026 09:32 00000000  sub/")
-                .unwrap();
+        let entry = parse_verbose_zip_line(
+            "       0  Stored        0   0% 10-29-2026 09:32 00000000  sub/",
+        )
+        .unwrap();
         assert_eq!(entry.name, "sub/");
         assert_eq!(entry.size, 0);
     }
