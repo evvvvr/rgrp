@@ -16,7 +16,7 @@ use crate::search::{Error as SearchError, MatchConfig, WorkQueue, search};
 /// between workers lives entirely in whatever implements [`WorkQueue`]
 /// ([`WorkerQueue`] for `spawn_workers`'s own work-stealing engine, or
 /// a test's own simple stand-in), never here.
-pub struct SharedWorkState {
+struct SharedWorkState {
     /// The paths given directly on the command line, exempt from
     /// `--glob`/`--iglob` - set once in `new` and never changed.
     seed_paths: HashSet<PathBuf>,
@@ -32,7 +32,7 @@ pub struct SharedWorkState {
 }
 
 impl SharedWorkState {
-    pub fn new(seed_paths: &[PathBuf]) -> Self {
+    fn new(seed_paths: &[PathBuf]) -> Self {
         Self {
             seed_paths: seed_paths.iter().cloned().collect(),
             cancelled: AtomicBool::new(false),
@@ -40,7 +40,7 @@ impl SharedWorkState {
         }
     }
 
-    pub fn is_seed_path(&self, path: &Path) -> bool {
+    fn is_seed_path(&self, path: &Path) -> bool {
         self.seed_paths.contains(path)
     }
 }
