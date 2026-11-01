@@ -211,21 +211,27 @@ whole.
 
 ### Allocation overhead on dense matches
 
-Both workloads above have modest match density per file, so they don't
-exercise two smaller allocation fixes made along the way: reusing one
-match-offset buffer across every line of a file instead of allocating fresh
-per matching line, and removing a per-match intermediate `String`
-allocation in the colored printer. Isolated on a synthetic 2,000,000-line
-file where every line matches, warm cache, 3 runs each, piped output:
+The directory and archive workloads above have modest match density per
+file, so neither one actually exercises two smaller fixes to the per-line
+matching path:
+
+- reusing one match-offset buffer across every line of a file, instead of
+  allocating a fresh one for each matching line
+- writing a match's highlighted text straight into the output buffer,
+  instead of first building a throwaway `String` and copying that in
+
+To measure these specifically, this isolates a synthetic 2,000,000-line
+file where *every* line matches - warm cache, piped output, 3 runs each:
 
 | | before | after |
 |---|---|---|
-| user CPU time | 0.20s (×3) | 0.17-0.18s |
+| user CPU time | 0.20s, every run | 0.17-0.18s |
 | peak RSS | ~4.3MB | ~4.3MB (flat) |
 
-A consistent ~10-15% CPU-time reduction on this kind of dense-match file,
-output confirmed byte-identical between both versions. Memory is flat, as
-expected - this is about per-line allocation churn, not peak memory.
+A consistent ~10-15% CPU-time reduction on this dense-match workload,
+output confirmed byte-identical between both versions. Memory stays flat,
+as expected - these fixes target per-line allocation churn, not peak
+memory.
 
 ## License
 
