@@ -299,8 +299,6 @@ pub(crate) fn spawn_workers(
         let output_tx = output_tx.clone();
 
         let thread = thread::spawn(move || {
-            // Built once per thread, not once per path - none of
-            // these fields ever change across the whole run.
             let config = MatchConfig {
                 patterns: &patterns,
                 globs: &globs,
