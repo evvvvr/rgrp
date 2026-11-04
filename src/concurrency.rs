@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
 
 use crate::printer::{FlushingPrinter, LockedSink, OutputSink, Printer};
-use crate::search::{Error as SearchError, OwnedSearchConfig, SearchConfig, WorkQueue, search};
+use crate::search::{Error as SearchError, OwnedSearchConfig, WorkQueue, search};
 
 /// State shared across a whole run, regardless of which queueing
 /// strategy is actually walking paths with it - how work items flow
@@ -228,10 +228,9 @@ impl WorkersHandle {
 pub(crate) struct SpawnOptions<'a> {
     /// Patterns, globs, and behavior knobs - identical for every
     /// worker, for the whole run. Borrowed here, same as any other
-    /// single call - `spawn_workers` is the one that needs an owned
-    /// copy (to clone once per worker thread), so it's the one that
-    /// builds an `OwnedSearchConfig` from this.
-    pub(crate) search_config: SearchConfig<'a>,
+    /// single call - `spawn_workers` is the one that needs its own
+    /// owned copy per worker thread, so it's the one that clones this.
+    pub(crate) search_config: &'a OwnedSearchConfig,
     /// The starting paths given on the command line.
     pub(crate) files: &'a [PathBuf],
     /// How many worker threads to use; `0` picks a number automatically.
@@ -254,21 +253,6 @@ pub(crate) fn spawn_workers(
     let shared_state = Arc::new(SharedWorkState::new(opts.files));
     let make_printer: Arc<dyn Fn() -> Box<dyn Printer> + Send + Sync> = Arc::new(make_printer);
     let write_output: Arc<dyn Fn(&str) + Send + Sync> = Arc::new(write_output);
-    // Built once here, not once per thread - every worker's own copy
-    // is cloned from this below (not shared behind an `Arc`, unlike
-    // `make_printer`/`write_output`: those are `Box<dyn Fn>`, which
-    // can't be cloned at all, so `Arc` is their only option, while
-    // `OwnedSearchConfig` is plain `Clone` data with nothing stopping
-    // each thread from just owning its own copy). `Regex::clone` is
-    // already O(1) internally (its own `Arc` around the compiled
-    // program), so this only allocates a couple of small `Vec` spines
-    // per thread, once at startup - not per path, so it isn't worth
-    // adding an `Arc` layer to avoid.
-    let search_config = OwnedSearchConfig {
-        patterns: opts.search_config.patterns.to_vec(),
-        globs: opts.search_config.globs.to_vec(),
-        behavior: opts.search_config.behavior,
-    };
 
     install_cancel_handler(&shared_state);
 
@@ -307,7 +291,7 @@ pub(crate) fn spawn_workers(
         };
         let make_printer = Arc::clone(&make_printer);
         let write_output = Arc::clone(&write_output);
-        let search_config = search_config.clone();
+        let search_config = opts.search_config.clone();
 
         let thread = thread::spawn(move || {
             WorkerThread::new(queue, search_config, &*make_printer, write_output).run()
@@ -388,10 +372,10 @@ impl WorkerThread {
     /// the whole worker thread down, and reports whatever happened
     /// back through `self.queue`.
     fn search_one_path(&mut self, path: PathBuf) {
-        let config = self.search_config.as_search_config();
         let queue = &self.queue;
         let printer: &mut dyn Printer = self.printer.as_mut();
         let write_output = &*self.write_output;
+        let search_config = &self.search_config.as_search_config();
 
         let search_result = panic::catch_unwind(AssertUnwindSafe(|| {
             // `LockedSink` holds the print lock lazily for as long as
@@ -402,7 +386,7 @@ impl WorkerThread {
             let mut emit = |output: String| sink.write(&output);
             let mut flushing_printer = FlushingPrinter::new(&mut *printer, &mut emit);
 
-            search(&config, &path, &mut flushing_printer, queue)
+            search(search_config, &path, &mut flushing_printer, queue)
         }));
 
         // On success, output was already sent to `emit` as each

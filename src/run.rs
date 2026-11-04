@@ -52,7 +52,7 @@ pub fn run<P: Printer + 'static>(
 ) -> Result<(), Error> {
     let outcome = spawn_workers(
         SpawnOptions {
-            search_config: options.search_config.as_search_config(),
+            search_config: &options.search_config,
             files: &options.files,
             max_threads: options.max_threads as usize,
         },
