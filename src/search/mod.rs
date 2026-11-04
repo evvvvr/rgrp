@@ -79,18 +79,12 @@ pub trait WorkQueue {
     fn is_seed_path(&self, path: &Path) -> bool;
 }
 
-/// What every search shares for a whole run: the patterns being
-/// matched, the globs deciding which paths are even considered, and
-/// the behavior knobs that used to live in a separate `Options` type -
-/// folded in here instead, since nothing ever used them apart from
-/// `patterns`/`globs` anyway. Always passed together: from [`search`]
-/// down through every one of its own internal calls.
+/// The yes/no behavior knobs a search needs, independent of what's
+/// actually being matched - grouped together since they're always
+/// passed and cloned as one unit, from [`crate::run::Options`] down
+/// through [`SearchConfig`].
 #[derive(Clone, Copy, Default)]
-pub struct MatchConfig<'a> {
-    pub patterns: &'a [Regex],
-    /// Only paths matching at least one of these are searched; every
-    /// path is searched if this is empty.
-    pub globs: &'a [GlobSpec],
+pub struct MatchBehavior {
     /// When true, report lines that *don't* match any pattern instead
     /// of lines that do.
     pub invert_matches: bool,
@@ -106,11 +100,48 @@ pub struct MatchConfig<'a> {
     pub search_archives: bool,
 }
 
+/// What every search shares for a whole run: the patterns being
+/// matched, the globs deciding which paths are even considered, and
+/// the behavior knobs - folded in here instead of a separate
+/// `Options` type, since nothing ever used them apart from
+/// `patterns`/`globs` anyway. Always passed together: from [`search`]
+/// down through every one of its own internal calls.
+#[derive(Clone, Copy, Default)]
+pub struct SearchConfig<'a> {
+    pub patterns: &'a [Regex],
+    /// Only paths matching at least one of these are searched; every
+    /// path is searched if this is empty.
+    pub globs: &'a [GlobSpec],
+    pub behavior: MatchBehavior,
+}
+
+/// The owned counterpart to [`SearchConfig`] - what [`crate::run::Options`]
+/// holds (patterns already compiled by the caller) and what
+/// `spawn_workers` clones once per worker thread, rather than borrow
+/// for a single call. [`Self::as_search_config`] turns one into the
+/// borrowed view `search` actually wants.
+#[derive(Clone, Default)]
+pub struct OwnedSearchConfig {
+    pub patterns: Vec<Regex>,
+    pub globs: Vec<GlobSpec>,
+    pub behavior: MatchBehavior,
+}
+
+impl OwnedSearchConfig {
+    pub fn as_search_config(&self) -> SearchConfig<'_> {
+        SearchConfig {
+            patterns: &self.patterns,
+            globs: &self.globs,
+            behavior: self.behavior,
+        }
+    }
+}
+
 /// Searches one path against `config.patterns`. A file is read line by
 /// line and matched directly. A directory isn't recursed into here -
 /// its entries are handed to `WorkQueue`.
 pub fn search(
-    config: &MatchConfig,
+    config: &SearchConfig,
     path: &Path,
     printer: &mut FlushingPrinter<'_>,
     queue: &impl WorkQueue,
@@ -158,7 +189,7 @@ pub fn search(
         return Ok(Outcome::Done);
     }
 
-    if !config.search_archives {
+    if !config.behavior.search_archives {
         return search_plain(config, path, printer);
     }
 
@@ -176,7 +207,7 @@ pub fn search(
 /// caller looping over an archive's members gets each one's output as
 /// it finishes.
 fn search_reader(
-    config: &MatchConfig,
+    config: &SearchConfig,
     file_path: &str,
     mut reader: impl Read,
     flushing_printer: &mut FlushingPrinter<'_>,
@@ -189,7 +220,7 @@ fn search_reader(
         let matched = match_line(
             config.patterns,
             &MatchOptions {
-                invert_matches: config.invert_matches,
+                invert_matches: config.behavior.invert_matches,
             },
             line,
             &mut line_matches,
@@ -205,8 +236,8 @@ fn search_reader(
     let res = read_lines(
         &mut reader,
         ReadOptions {
-            skip_on_null: !config.search_binary,
-            crlf: config.crlf,
+            skip_on_null: !config.behavior.search_binary,
+            crlf: config.behavior.crlf,
         },
         &mut on_read_line,
     );
@@ -294,25 +325,22 @@ mod tests {
     }
 
     fn run_reader_multi(patterns: &[&str], input: &str) -> RecordingPrinter {
-        run_reader_with_options(patterns, input, &MatchConfig::default())
+        run_reader_with_options(patterns, input, MatchBehavior::default())
     }
 
-    /// `flags`'s own `patterns`/`globs` are ignored - only its bool
-    /// fields matter here, overridden below with the real compiled
-    /// `patterns` and an empty `globs`.
     fn run_reader_with_options(
         patterns: &[&str],
         input: &str,
-        flags: &MatchConfig,
+        behavior: MatchBehavior,
     ) -> RecordingPrinter {
         let patterns: Vec<Regex> = patterns.iter().map(|p| Regex::new(p).unwrap()).collect();
         let mut printer = RecordingPrinter::new();
         let mut emit = |_: String| {};
         let mut flushing_printer = FlushingPrinter::new(&mut printer, &mut emit);
-        let config = MatchConfig {
+        let config = SearchConfig {
             patterns: &patterns,
             globs: &[],
-            ..*flags
+            behavior,
         };
         search_reader(
             &config,
@@ -344,7 +372,7 @@ mod tests {
         let printer = run_reader_with_options(
             &["foo"],
             "foo\r\nfoo\n",
-            &MatchConfig {
+            MatchBehavior {
                 crlf: true,
                 ..Default::default()
             },
@@ -440,7 +468,7 @@ mod tests {
         let printer = run_reader_with_options(
             &["foo"],
             "foo\nbar\nfoo bar\nbaz\n",
-            &MatchConfig {
+            MatchBehavior {
                 invert_matches: true,
                 ..Default::default()
             },
@@ -454,7 +482,7 @@ mod tests {
         let printer = run_reader_with_options(
             &["foo", "bar"],
             "foo\nbar\nfoo bar\nbaz\n",
-            &MatchConfig {
+            MatchBehavior {
                 invert_matches: true,
                 ..Default::default()
             },
@@ -468,7 +496,7 @@ mod tests {
         let printer = run_reader_with_options(
             &["foo"],
             "bar\n",
-            &MatchConfig {
+            MatchBehavior {
                 invert_matches: true,
                 ..Default::default()
             },

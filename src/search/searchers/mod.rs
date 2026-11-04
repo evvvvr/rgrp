@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 use crate::printer::FlushingPrinter;
 
 use super::classify::CompressionFormat;
-use super::{Error, MatchConfig, SearchResult, search_reader};
+use super::{Error, SearchConfig, SearchResult, search_reader};
 
 mod tar;
 mod zip;
@@ -49,7 +49,7 @@ fn check_exit_status(
 /// rather than a compressed tarball - `classify` sends those to
 /// `search_tarball` instead.
 pub(super) fn search_compressed(
-    config: &MatchConfig,
+    config: &SearchConfig,
     path: &Path,
     printer: &mut FlushingPrinter<'_>,
     format: CompressionFormat,
@@ -83,7 +83,7 @@ pub(super) fn search_compressed(
 }
 
 pub(super) fn search_plain(
-    config: &MatchConfig,
+    config: &SearchConfig,
     path: &Path,
     printer: &mut FlushingPrinter<'_>,
 ) -> SearchResult {

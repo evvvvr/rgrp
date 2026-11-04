@@ -1,10 +1,12 @@
 use clap::{CommandFactory, FromArgMatches, Parser};
+use regex::bytes::RegexBuilder;
 
 use std::ffi::OsString;
 use std::path::PathBuf;
 
 use rgrp::glob;
 use rgrp::run::Options;
+use rgrp::search::{MatchBehavior, OwnedSearchConfig};
 
 pub const PROGRAM_NAME: &str = "rgrp";
 
@@ -106,7 +108,7 @@ where
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    let (patterns, paths) = if cli.regexp.is_empty() {
+    let (regexps, paths) = if cli.regexp.is_empty() {
         let mut args = cli.args.into_iter();
         let Some(pattern) = args.next() else {
             return Err(Cli::command().error(
@@ -119,16 +121,34 @@ where
         (cli.regexp, cli.args)
     };
 
+    let patterns = regexps
+        .into_iter()
+        .map(|regexp| {
+            RegexBuilder::new(&regexp)
+                .case_insensitive(cli.ignore_case)
+                .build()
+                .map_err(|e| {
+                    Cli::command().error(
+                        clap::error::ErrorKind::InvalidValue,
+                        format!("invalid search pattern {regexp:?}: {e}"),
+                    )
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
     Ok(Options {
-        regexps: patterns,
+        search_config: OwnedSearchConfig {
+            patterns,
+            globs,
+            behavior: MatchBehavior {
+                invert_matches: cli.invert_match,
+                search_binary: cli.text,
+                crlf: cli.crlf,
+                search_archives: cli.search_archives,
+            },
+        },
         files: paths.into_iter().map(PathBuf::from).collect(),
-        ignore_case: cli.ignore_case,
-        invert_matches: cli.invert_match,
         max_threads: cli.max_threads,
-        search_binary: cli.text,
-        crlf: cli.crlf,
-        search_archives: cli.search_archives,
-        globs,
     })
 }
 
@@ -158,21 +178,25 @@ mod tests {
     #[test]
     fn first_positional_is_the_pattern_and_the_rest_are_paths() {
         let options = parse(&["needle", "a", "b"]);
-        assert_eq!(options.regexps, vec!["needle"]);
+        assert_eq!(options.search_config.patterns.len(), 1);
+        assert!(options.search_config.patterns[0].is_match(b"needle"));
         assert_eq!(options.files, vec![PathBuf::from("a"), PathBuf::from("b")]);
     }
 
     #[test]
     fn regexp_flag_treats_every_positional_as_a_path() {
         let options = parse(&["-e", "needle", "a", "b"]);
-        assert_eq!(options.regexps, vec!["needle"]);
+        assert_eq!(options.search_config.patterns.len(), 1);
+        assert!(options.search_config.patterns[0].is_match(b"needle"));
         assert_eq!(options.files, vec![PathBuf::from("a"), PathBuf::from("b")]);
     }
 
     #[test]
     fn regexp_flag_may_be_given_multiple_times() {
         let options = parse(&["-e", "foo", "-e", "bar", "a"]);
-        assert_eq!(options.regexps, vec!["foo", "bar"]);
+        assert_eq!(options.search_config.patterns.len(), 2);
+        assert!(options.search_config.patterns[0].is_match(b"foo"));
+        assert!(options.search_config.patterns[1].is_match(b"bar"));
         assert_eq!(options.files, vec![PathBuf::from("a")]);
     }
 
@@ -182,21 +206,33 @@ mod tests {
     }
 
     #[test]
+    fn an_invalid_regex_pattern_is_an_error() {
+        assert!(try_parse(&["("]).is_err());
+    }
+
+    #[test]
+    fn ignore_case_flag_makes_the_compiled_pattern_match_regardless_of_letter_case() {
+        let options = parse(&["needle"]);
+        assert!(!options.search_config.patterns[0].is_match(b"NEEDLE"));
+
+        let options = parse(&["-i", "needle"]);
+        assert!(options.search_config.patterns[0].is_match(b"NEEDLE"));
+    }
+
+    #[test]
     fn boolean_flags_are_off_by_default_and_on_when_given() {
         let defaults = parse(&["needle"]);
-        assert!(!defaults.ignore_case);
-        assert!(!defaults.invert_matches);
-        assert!(!defaults.search_binary);
-        assert!(!defaults.crlf);
-        assert!(!defaults.search_archives);
+        assert!(!defaults.search_config.behavior.invert_matches);
+        assert!(!defaults.search_config.behavior.search_binary);
+        assert!(!defaults.search_config.behavior.crlf);
+        assert!(!defaults.search_config.behavior.search_archives);
         assert_eq!(defaults.max_threads, 0);
 
         let set = parse(&["-i", "-v", "-a", "--crlf", "-z", "-j", "4", "needle"]);
-        assert!(set.ignore_case);
-        assert!(set.invert_matches);
-        assert!(set.search_binary);
-        assert!(set.crlf);
-        assert!(set.search_archives);
+        assert!(set.search_config.behavior.invert_matches);
+        assert!(set.search_config.behavior.search_binary);
+        assert!(set.search_config.behavior.crlf);
+        assert!(set.search_config.behavior.search_archives);
         assert_eq!(set.max_threads, 4);
     }
 
@@ -208,11 +244,11 @@ mod tests {
         let options = parse(&["-g", "*", "-g", "!secret.txt", "needle"]);
         assert!(!glob::is_file_included(
             Path::new("secret.txt"),
-            &options.globs
+            &options.search_config.globs
         ));
         assert!(glob::is_file_included(
             Path::new("other.txt"),
-            &options.globs
+            &options.search_config.globs
         ));
     }
 
@@ -229,11 +265,11 @@ mod tests {
         // only this exact order produces "excluded" as the result.
         assert!(!glob::is_file_included(
             Path::new("main.rs"),
-            &options.globs
+            &options.search_config.globs
         ));
         assert!(!glob::is_file_included(
             Path::new("other.rs"),
-            &options.globs
+            &options.search_config.globs
         ));
     }
 

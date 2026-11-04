@@ -4,7 +4,9 @@ use std::fs;
 use std::sync::{Arc, Mutex};
 
 use common::SharedRecorder;
+use regex::bytes::{Regex, RegexBuilder};
 use rgrp::run::{Options, run};
+use rgrp::search::{MatchBehavior, OwnedSearchConfig};
 use tempfile::tempdir;
 
 #[test]
@@ -19,12 +21,12 @@ fn reports_matches_from_good_paths_and_errors_for_bad_ones() {
     let errors_for_closure = errors.clone();
 
     let options = Options {
-        regexps: vec!["needle".to_string()],
+        search_config: OwnedSearchConfig {
+            patterns: vec![Regex::new("needle").unwrap()],
+            ..Default::default()
+        },
         files: vec![good.clone(), missing.clone()],
-        ignore_case: false,
-        invert_matches: false,
         max_threads: 1,
-        ..Default::default()
     };
 
     let recorder_for_closure = recorder.clone();
@@ -60,12 +62,12 @@ fn succeeds_when_every_path_is_valid() {
     let errors_for_closure = errors.clone();
 
     let options = Options {
-        regexps: vec!["needle".to_string()],
+        search_config: OwnedSearchConfig {
+            patterns: vec![Regex::new("needle").unwrap()],
+            ..Default::default()
+        },
         files: vec![file.clone()],
-        ignore_case: false,
-        invert_matches: false,
         max_threads: 1,
-        ..Default::default()
     };
 
     let result = run(
@@ -93,12 +95,17 @@ fn ignore_case_matches_regardless_of_letter_case() {
     let recorder = SharedRecorder::new();
 
     let options = Options {
-        regexps: vec!["needle".to_string()],
+        search_config: OwnedSearchConfig {
+            patterns: vec![
+                RegexBuilder::new("needle")
+                    .case_insensitive(true)
+                    .build()
+                    .unwrap(),
+            ],
+            ..Default::default()
+        },
         files: vec![file.clone()],
-        ignore_case: true,
-        invert_matches: false,
         max_threads: 1,
-        ..Default::default()
     };
 
     let recorder_for_closure = recorder.clone();
@@ -123,12 +130,12 @@ fn without_ignore_case_only_exact_case_matches() {
     let recorder = SharedRecorder::new();
 
     let options = Options {
-        regexps: vec!["needle".to_string()],
+        search_config: OwnedSearchConfig {
+            patterns: vec![Regex::new("needle").unwrap()],
+            ..Default::default()
+        },
         files: vec![file.clone()],
-        ignore_case: false,
-        invert_matches: false,
         max_threads: 1,
-        ..Default::default()
     };
 
     let recorder_for_closure = recorder.clone();
@@ -153,12 +160,16 @@ fn invert_match_reports_lines_that_do_not_match() {
     let recorder = SharedRecorder::new();
 
     let options = Options {
-        regexps: vec!["needle".to_string()],
+        search_config: OwnedSearchConfig {
+            patterns: vec![Regex::new("needle").unwrap()],
+            behavior: MatchBehavior {
+                invert_matches: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
         files: vec![file.clone()],
-        ignore_case: false,
-        invert_matches: true,
         max_threads: 1,
-        ..Default::default()
     };
 
     let recorder_for_closure = recorder.clone();

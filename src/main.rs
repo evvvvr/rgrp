@@ -40,10 +40,6 @@ fn main() -> ExitCode {
 
     match result {
         Ok(()) => ExitCode::SUCCESS,
-        Err(run::Error::Pattern(err)) => {
-            eprintln!("{PROGRAM_NAME}: invalid search pattern: {err}");
-            ExitCode::FAILURE
-        }
         Err(run::Error::SearchFailed) => ExitCode::FAILURE,
         Err(run::Error::Interrupted) => {
             eprintln!("{PROGRAM_NAME}: interrupted");

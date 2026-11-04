@@ -7,7 +7,7 @@ use std::process::Command;
 use common::{SharedRecorder, walk};
 use regex::bytes::Regex;
 use rgrp::glob;
-use rgrp::search::MatchConfig;
+use rgrp::search::{MatchBehavior, SearchConfig};
 use tempfile::tempdir;
 
 fn make_tarball(src_dir: &Path, archive_path: &Path) {
@@ -46,9 +46,12 @@ fn finds_matches_inside_a_tarball() {
     let recorder = SharedRecorder::new();
     let re = Regex::new("needle").unwrap();
     walk(
-        &MatchConfig {
+        &SearchConfig {
             patterns: &[re],
-            search_archives: true,
+            behavior: MatchBehavior {
+                search_archives: true,
+                ..Default::default()
+            },
             ..Default::default()
         },
         &archive,
@@ -72,9 +75,12 @@ fn finds_matches_inside_a_zip() {
     let recorder = SharedRecorder::new();
     let re = Regex::new("needle").unwrap();
     walk(
-        &MatchConfig {
+        &SearchConfig {
             patterns: &[re],
-            search_archives: true,
+            behavior: MatchBehavior {
+                search_archives: true,
+                ..Default::default()
+            },
             ..Default::default()
         },
         &archive,
@@ -100,11 +106,13 @@ fn a_glob_filters_which_tarball_members_get_searched() {
     let re = Regex::new("needle").unwrap();
     let globs = [glob::compile("*.rs", false).unwrap()];
     walk(
-        &MatchConfig {
+        &SearchConfig {
             patterns: &[re],
             globs: &globs,
-            search_archives: true,
-            ..Default::default()
+            behavior: MatchBehavior {
+                search_archives: true,
+                ..Default::default()
+            },
         },
         &archive,
         &mut || recorder.printer(),
@@ -131,11 +139,13 @@ fn a_glob_filters_which_zip_members_get_searched() {
     let re = Regex::new("needle").unwrap();
     let globs = [glob::compile("*.rs", false).unwrap()];
     walk(
-        &MatchConfig {
+        &SearchConfig {
             patterns: &[re],
             globs: &globs,
-            search_archives: true,
-            ..Default::default()
+            behavior: MatchBehavior {
+                search_archives: true,
+                ..Default::default()
+            },
         },
         &archive,
         &mut || recorder.printer(),

@@ -1,29 +1,19 @@
-use regex::bytes::RegexBuilder;
 use std::path::{Path, PathBuf};
 
 use crate::{
     concurrency::{RunOutcome, SearchFailed, SpawnOptions, spawn_workers},
-    glob::GlobSpec,
     printer::Printer,
     search,
-    search::MatchConfig,
+    search::OwnedSearchConfig,
 };
 
 /// Entire program run error.
 pub enum Error {
-    /// One of the given patterns failed to compile; nothing was searched.
-    Pattern(regex::Error),
     /// The search ran, but at least one path reported an error along the way.
     SearchFailed,
     /// Ctrl-C (or another handled termination signal) stopped the search
     /// before every path was searched.
     Interrupted,
-}
-
-impl From<regex::Error> for Error {
-    fn from(e: regex::Error) -> Self {
-        Error::Pattern(e)
-    }
 }
 
 impl From<SearchFailed> for Error {
@@ -35,32 +25,19 @@ impl From<SearchFailed> for Error {
 /// Everything a run needs that isn't a closure.
 #[derive(Default)]
 pub struct Options {
-    /// Patterns to search for, as raw regex strings (compiled by `run`).
-    pub regexps: Vec<String>,
+    /// What to match and how - patterns already compiled, since a
+    /// caller building these from raw strings (and an `ignore_case`
+    /// flag) can fail to do so, so that step happens before `Options`
+    /// exists, not in `run` itself.
+    pub search_config: OwnedSearchConfig,
     /// Starting paths given on the command line.
     pub files: Vec<PathBuf>,
-    /// Match patterns without regard to letter case.
-    pub ignore_case: bool,
-    /// Report lines that *don't* match instead of lines that do.
-    pub invert_matches: bool,
     /// How many worker threads to use; `0` picks a number automatically.
     pub max_threads: u8,
-    /// When true, a file that looks binary is searched as text instead
-    /// of skipped. Mirrors ripgrep's `-a`/`--text`.
-    pub search_binary: bool,
-    /// When true, a trailing `\r` before `\n` is stripped as part of
-    /// the line terminator. Mirrors ripgrep's `--crlf`.
-    pub crlf: bool,
-    /// When true, zip/tar archives and compressed files are unpacked
-    /// and searched inside, instead of being read as opaque binary
-    /// data. Mirrors ripgrep's `-z`/`--search-zip`.
-    pub search_archives: bool,
-    pub globs: Vec<GlobSpec>,
 }
 
-/// Runs a whole search end to end: compiles the patterns, starts the
-/// worker pool, and blocks until every result and error has been
-/// reported.
+/// Runs a whole search end to end: starts the worker pool and blocks
+/// until every result and error has been reported.
 ///
 /// `make_printer` and `write_output` are both shared across every
 /// worker thread, so both need to be `Send + Sync`. `write_output` is
@@ -73,28 +50,9 @@ pub fn run<P: Printer + 'static>(
     write_output: impl Fn(&str) + Send + Sync + 'static,
     on_error: impl FnMut(search::Error, &Path),
 ) -> Result<(), Error> {
-    let patterns = options
-        .regexps
-        .iter()
-        .map(|regexp| {
-            RegexBuilder::new(regexp)
-                .case_insensitive(options.ignore_case)
-                .build()
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let config = MatchConfig {
-        patterns: &patterns,
-        globs: &options.globs,
-        invert_matches: options.invert_matches,
-        search_binary: options.search_binary,
-        crlf: options.crlf,
-        search_archives: options.search_archives,
-    };
-
     let outcome = spawn_workers(
         SpawnOptions {
-            config,
+            search_config: &options.search_config,
             files: &options.files,
             max_threads: options.max_threads as usize,
         },
